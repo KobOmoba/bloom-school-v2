@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<meta name="theme-color" content="#06091a">
+<title>EduBloom School v2</title>
+<style>
+:root{--bg:#06091a;--s1:#0d1226;--s2:#141d35;--s3:#1e2b4a;--border:rgba(100,120,200,.15);--text:#e2e8f0;--sub:#64748b;--brand:#2563eb;--money:#10b981;--danger:#ef4444;--warn:#f59e0b;}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:15px;-webkit-tap-highlight-color:transparent;}
+#login{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:2rem 1.25rem;}
+#app{display:none;flex-direction:column;min-height:100vh;}
+.v2-banner{background:#7c3aed;color:#fff;text-align:center;padding:4px;font-size:.7rem;font-weight:700;}
+.hdr{background:var(--s1);border-bottom:1px solid var(--border);padding:.65rem 1rem;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;}
+.hdr-brand{font-size:.88rem;font-weight:800;}
+.tabs{background:var(--s1);border-bottom:1px solid var(--border);display:flex;}
+.tab{flex:1;padding:.55rem .4rem;font-size:.68rem;font-weight:600;border:none;background:transparent;color:var(--sub);cursor:pointer;border-bottom:2px solid transparent;text-align:center;}
+.tab.on{color:var(--brand);border-bottom-color:var(--brand);}
+.content{padding:1rem 1.25rem;max-width:560px;width:100%;margin:0 auto;}
+.sec{display:none;}.sec.on{display:block;}
+.card{background:var(--s2);border:1px solid var(--border);border-radius:14px;padding:.9rem;margin-bottom:.7rem;}
+.ct{font-weight:700;font-size:.88rem;margin-bottom:.55rem;}
+button{cursor:pointer;font-family:inherit;border:none;border-radius:10px;font-weight:600;}
+.btn-p{background:var(--brand);color:#fff;width:100%;padding:.8rem;font-size:.9rem;}
+.btn-g{background:var(--s3);color:var(--text);border:1px solid var(--border);padding:.5rem .9rem;}
+.btn-sm{padding:.36rem .8rem;font-size:.74rem;}
+label{display:block;font-size:.74rem;font-weight:600;color:var(--sub);margin-bottom:3px;margin-top:.55rem;}
+input,select{width:100%;background:var(--s1);border:1px solid var(--border);border-radius:10px;padding:.6rem .75rem;color:var(--text);font-size:.86rem;font-family:inherit;outline:none;-webkit-appearance:none;appearance:none;}
+input:focus{border-color:var(--brand);}
+.stat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:.45rem;margin-bottom:.65rem;}
+.stat-box{background:var(--s3);border-radius:10px;padding:.65rem .4rem;text-align:center;}
+.stat-n{font-size:1.35rem;font-weight:800;line-height:1;}
+.stat-l{font-size:.6rem;color:var(--sub);margin-top:2px;}
+.prog-bg{height:7px;background:var(--s3);border-radius:4px;overflow:hidden;margin:.4rem 0;}
+.prog-fill{height:100%;background:var(--money);border-radius:4px;transition:width .5s;}
+.stu-row{display:flex;align-items:center;gap:.5rem;padding:.42rem 0;border-bottom:1px solid var(--border);}
+.stu-av{width:30px;height:30px;border-radius:50%;background:var(--brand);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.8rem;flex-shrink:0;}
+.stu-name{font-size:.84rem;font-weight:600;}
+.stu-meta{font-size:.7rem;color:var(--sub);}
+.badge{display:inline-block;padding:2px 7px;border-radius:12px;font-size:.64rem;font-weight:700;}
+.bg{background:rgba(16,185,129,.14);color:var(--money);}
+.ba{background:rgba(245,158,11,.14);color:var(--warn);}
+.br{background:rgba(239,68,68,.14);color:var(--danger);}
+.err{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.25);border-radius:8px;padding:.6rem;font-size:.8rem;color:#fca5a5;display:none;margin-top:.6rem;}
+.sdot{font-size:.7rem;}.sd-on{color:var(--money);}.sd-off{color:var(--danger);}
+</style>
+</head>
+<body>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+
+<!-- LOGIN -->
+<div id="login">
+  <div style="text-align:center;margin-bottom:1.5rem;">
+    <div style="font-size:1.6rem;font-weight:900;color:var(--brand);">🌸 EduBloom</div>
+    <div style="font-size:.8rem;color:var(--sub);">School Portal</div>
+    <div style="display:inline-block;background:#7c3aed;color:#fff;border-radius:12px;padding:2px 10px;font-size:.66rem;font-weight:700;margin-top:4px;">⚗️ v2 TEST</div>
+  </div>
+  <div style="background:var(--s1);border:1px solid var(--border);border-radius:16px;padding:1.5rem;width:100%;max-width:340px;">
+    <label>School ID</label>
+    <input id="l-school" placeholder="e.g. BLOOM-XXXXXX" autocomplete="off" style="text-transform:uppercase;" onkeydown="if(event.key==='Enter')doLogin()">
+    <label>Password</label>
+    <input id="l-pwd" type="password" placeholder="Your school password" onkeydown="if(event.key==='Enter')doLogin()">
+    <button class="btn-p" id="l-btn" onclick="doLogin()" style="margin-top:.7rem;">▶ Enter Portal</button>
+    <div class="err" id="l-err"></div>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app">
+  <div class="v2-banner">⚗️ v2 TEST — reads from v2_schools</div>
+  <div class="hdr">
+    <div>
+      <div class="hdr-brand" id="hdr-school">School</div>
+      <div style="font-size:.66rem;color:var(--sub);" id="hdr-plan"></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:.4rem;">
+      <span id="sync" class="sdot sd-off">●</span>
+      <button class="btn-g btn-sm" onclick="logout()">Logout</button>
+    </div>
+  </div>
+  <div class="tabs">
+    <button class="tab on" data-t="revenue" onclick="goTab('revenue')">💰 Revenue</button>
+    <button class="tab" data-t="students" onclick="goTab('students')">👥 Students</button>
+    <button class="tab" data-t="info" onclick="goTab('info')">ℹ️ Info</button>
+  </div>
+  <div style="flex:1;overflow-y:auto;padding-bottom:1rem;">
+
+    <!-- REVENUE -->
+    <div id="sec-revenue" class="sec on">
+      <div class="content">
+        <div class="card">
+          <div class="ct" id="rev-school-name">Loading...</div>
+          <div class="stat-grid">
+            <div class="stat-box"><div class="stat-n" id="r-students">0</div><div class="stat-l">Students</div></div>
+            <div class="stat-box"><div class="stat-n" id="r-collected" style="font-size:1rem;">₦0</div><div class="stat-l">Collected</div></div>
+            <div class="stat-box"><div class="stat-n" id="r-rate">0%</div><div class="stat-l">Rate</div></div>
+          </div>
+          <div class="prog-bg"><div class="prog-fill" id="r-prog" style="width:0%"></div></div>
+          <div style="display:flex;justify-content:space-between;font-size:.72rem;color:var(--sub);">
+            <span>Outstanding: <strong style="color:var(--danger);" id="r-outstanding">₦0</strong></span>
+            <span id="r-rate-lbl">0% paid</span>
+          </div>
+        </div>
+
+        <!-- Per-class breakdown -->
+        <div class="card" id="class-breakdown">
+          <div class="ct">Class Breakdown</div>
+          <div id="class-list"><p style="color:var(--sub);font-size:.8rem;">Loading...</p></div>
+        </div>
+
+        <!-- Overdue list -->
+        <div class="card">
+          <div class="ct">⚠️ Outstanding Fees</div>
+          <div id="overdue-list"><p style="color:var(--sub);font-size:.8rem;">Loading...</p></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- STUDENTS -->
+    <div id="sec-students" class="sec">
+      <div class="content">
+        <div class="card">
+          <input id="stu-search" placeholder="Search students..." oninput="renderStudents()">
+        </div>
+        <div id="students-list"><p style="color:var(--sub);font-size:.8rem;text-align:center;padding:1rem;">Loading...</p></div>
+      </div>
+    </div>
+
+    <!-- INFO -->
+    <div id="sec-info" class="sec">
+      <div class="content">
+        <div class="card">
+          <div class="ct">🏫 School Details</div>
+          <div id="school-info"><p style="color:var(--sub);font-size:.8rem;">Loading...</p></div>
+        </div>
+        <div class="card">
+          <div class="ct">⚗️ v2 Test Info</div>
+          <p style="font-size:.76rem;color:var(--sub);line-height:1.5;">This is the bloom-school-v2 test app. It reads from the <code style="background:var(--s3);padding:1px 5px;border-radius:4px;">v2_schools</code> Firestore collection, which is populated by the bloom-portal-v2 approval flow.<br><br>When a deal is approved in portal-v2, all student data from the agent's ledger scan is written directly into this school's document — so this first login shows a fully populated school.</p>
+          <div style="margin-top:.75rem;font-size:.76rem;"><strong>School ID:</strong> <span id="info-school-id" style="font-family:monospace;color:var(--brand);">—</span></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+const FB={apiKey:"AIzaSyCVEdunn3AZndDP5Rm1Z3Kv1e6G6W2mB_o",authDomain:"educationbloom-699ed.firebaseapp.com",projectId:"educationbloom-699ed",storageBucket:"educationbloom-699ed.firebasestorage.app",messagingSenderId:"33750392965",appId:"1:33750392965:web:2b3da887ede996ea8389ec"};
+let db=null;
+try{firebase.initializeApp(FB);db=firebase.firestore();}catch(e){console.warn(e);}
+
+let schoolId=null,SD={config:{},students:[]};
+const $=id=>document.getElementById(id);
+const fmt=n=>'₦'+Number(n||0).toLocaleString('en-NG');
+const esc=s=>{if(!s)return'';const d=document.createElement('div');d.textContent=s;return d.innerHTML;};
+
+async function doLogin(){
+  const sid=($('l-school').value||'').trim().toUpperCase();
+  const pwd=($('l-pwd').value||'').trim();
+  const err=$('l-err'),btn=$('l-btn');
+  err.style.display='none';
+  if(!sid.startsWith('BLOOM-')){err.textContent='School ID must start with BLOOM-';err.style.display='block';return;}
+  if(!pwd){err.textContent='Enter your password.';err.style.display='block';return;}
+  btn.textContent='Checking...';btn.disabled=true;
+  try{
+    if(!db)throw new Error('No database connection.');
+    const doc=await db.collection('v2_schools').doc(sid).get();
+    if(!doc.exists){err.textContent=`School "${sid}" not found in v2_schools. Approve a deal in portal-v2 first.`;err.style.display='block';btn.textContent='▶ Enter Portal';btn.disabled=false;return;}
+    const data=doc.data();
+    const staff=data.staff||[];
+    const match=staff.find(s=>(s.password||'')=== pwd||(s.email||'').toLowerCase()=== pwd.toLowerCase());
+    if(!match&&pwd!==data.config?.password){err.textContent='Incorrect password.';err.style.display='block';btn.textContent='▶ Enter Portal';btn.disabled=false;return;}
+    schoolId=sid;
+    SD.config=data.config||{};
+    SD.students=data.students||[];
+    startApp();
+  }catch(e){err.textContent='Error: '+(e.message||'Try again.');err.style.display='block';}
+  btn.textContent='▶ Enter Portal';btn.disabled=false;
+}
+
+function startApp(){
+  $('login').style.display='none';
+  const app=$('app');app.style.display='flex';app.style.flexDirection='column';
+  $('hdr-school').textContent=SD.config.schoolName||schoolId;
+  $('hdr-plan').textContent=(SD.config.plan||'basic').toUpperCase()+' · '+SD.students.length+' students';
+  $('info-school-id').textContent=schoolId;
+  const sync=$('sync');if(sync){sync.className='sdot sd-on';sync.textContent='● Online';}
+  goTab('revenue');
+}
+
+function logout(){if(!confirm('Logout?'))return;schoolId=null;SD={config:{},students:[]};location.reload();}
+
+function goTab(tab){
+  document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('on',b.dataset.t===tab));
+  document.querySelectorAll('.sec').forEach(s=>s.classList.remove('on'));
+  $('sec-'+tab).classList.add('on');
+  if(tab==='revenue')renderRevenue();
+  if(tab==='students')renderStudents();
+  if(tab==='info'){}
+}
+
+function renderRevenue(){
+  const s=SD.students||[];
+  let exp=0,col=0;
+  s.forEach(x=>{exp+=(x.totalFee||0);col+=(x.paid||0);});
+  const pct=exp>0?Math.round((col/exp)*100):0;
+  $('rev-school-name').textContent=(SD.config.schoolName||schoolId)+' — Fee Summary';
+  $('r-students').textContent=s.length;
+  $('r-collected').textContent=fmt(col);
+  $('r-rate').textContent=pct+'%';
+  $('r-prog').style.width=pct+'%';
+  $('r-outstanding').textContent=fmt(exp-col);
+  $('r-rate-lbl').textContent=pct+'% collected';
+
+  // Class breakdown
+  const classes={};
+  s.forEach(st=>{
+    const c=st.class||'Unclassified';
+    if(!classes[c])classes[c]={students:0,collected:0,total:0};
+    classes[c].students++;classes[c].total+=st.totalFee||0;classes[c].collected+=st.paid||0;
+  });
+  const cl=$('class-list');
+  if(!Object.keys(classes).length){cl.innerHTML='<p style="color:var(--sub);font-size:.8rem;">No students yet.</p>';return;}
+  cl.innerHTML=Object.entries(classes).map(([cls,d])=>{
+    const pct=d.total>0?Math.round((d.collected/d.total)*100):0;
+    return`<div style="margin-bottom:.55rem;"><div style="display:flex;justify-content:space-between;font-size:.78rem;margin-bottom:3px;"><strong>${esc(cls)}</strong><span style="color:var(--sub);">${d.students} students · ${pct}% paid</span></div><div class="prog-bg" style="margin:0;"><div class="prog-fill" style="width:${pct}%;"></div></div></div>`;
+  }).join('');
+
+  // Overdue
+  const overdue=s.filter(x=>(x.totalFee||0)-(x.paid||0)>0).sort((a,b)=>((b.totalFee||0)-(b.paid||0))-((a.totalFee||0)-(a.paid||0))).slice(0,8);
+  const ol=$('overdue-list');
+  if(!overdue.length){ol.innerHTML='<p style="color:var(--money);font-size:.8rem;text-align:center;padding:.5rem;">🎉 All fees collected!</p>';return;}
+  ol.innerHTML=overdue.map(st=>{
+    const owe=(st.totalFee||0)-(st.paid||0);
+    return`<div class="stu-row"><div class="stu-av">${(st.name||'?').charAt(0)}</div><div style="flex:1;min-width:0;"><div class="stu-name">${esc(st.name)}</div><div class="stu-meta">${esc(st.class||'—')} · Owes: <strong style="color:var(--danger);">${fmt(owe)}</strong></div></div></div>`;
+  }).join('');
+}
+
+function renderStudents(){
+  const q=($('stu-search')?.value||'').toLowerCase();
+  let list=[...SD.students];
+  if(q)list=list.filter(s=>(s.name||'').toLowerCase().includes(q)||(s.class||'').toLowerCase().includes(q));
+  const c=$('students-list');
+  if(!list.length){c.innerHTML='<p style="color:var(--sub);font-size:.8rem;text-align:center;padding:2rem;">No students found.</p>';return;}
+  c.innerHTML=list.map(s=>{
+    const owe=(s.totalFee||0)-(s.paid||0);
+    const badge=owe<=0?'<span class="badge bg">Paid</span>':s.paid>0?'<span class="badge ba">Partial</span>':'<span class="badge br">Unpaid</span>';
+    return`<div class="stu-row" style="background:var(--s2);border-radius:10px;padding:.5rem .6rem;margin-bottom:.4rem;border:1px solid var(--border);"><div class="stu-av">${(s.name||'?').charAt(0)}</div><div style="flex:1;min-width:0;"><div class="stu-name">${esc(s.name)}</div><div class="stu-meta">${esc(s.class||'—')}${s.phone?' · '+s.phone:''}</div></div><div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;">${badge}${owe>0?`<span style="font-size:.68rem;color:var(--danger);">${fmt(owe)}</span>`:''}</div></div>`;
+  }).join('');
+}
+</script>
+</body>
+</html>
