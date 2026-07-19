@@ -917,6 +917,12 @@ function toggleEye(inputId, btn) {
           <button class="btn-ghost btn-sm" onclick="loadPresetSubjects('jss')" style="font-size:0.72rem;">📚 JSS</button>
           <button class="btn-ghost btn-sm" onclick="loadPresetSubjects('sss')" style="font-size:0.72rem;">📚 SSS</button>
         </div>
+        <div id="subj-premium-scan" style="display:none;">
+          <input type="file" accept="image/*" capture="environment" id="subj-scan-input" style="display:none" onchange="scanSubjectList(event)">
+          <button class="btn-brand" style="width:100%;margin-bottom:0.5rem;background:linear-gradient(135deg,#7c3aed,#2563eb);" onclick="document.getElementById('subj-scan-input').click()">📷 Scan Curriculum/Subject List</button>
+          <div id="subj-scan-fb" style="display:none;font-size:0.78rem;color:var(--sub);margin-bottom:0.5rem;text-align:center;"></div>
+        </div>
+        <div id="subj-premium-nudge" style="display:none;background:linear-gradient(135deg,#7c3aed,#2563eb);border-radius:10px;padding:0.6rem;text-align:center;font-size:0.76rem;margin-bottom:0.6rem;">⭐ Upgrade to Premium to scan a subject list/timetable instead of typing each one</div>
         <div id="subj-chips" style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:0.5rem;min-height:28px;"></div>
         <div style="display:flex;gap:0.4rem;margin-bottom:0.4rem;">
           <input type="text" id="new-subj-inp" placeholder="Add subject…" style="flex:1;margin:0;font-size:0.82rem;" onkeydown="if(event.key==='Enter'){event.preventDefault();addSubjectFromInput();}">
