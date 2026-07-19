@@ -5266,6 +5266,9 @@ function loadSettings() {
   const aiEl=$('settings-ai'); if(aiEl) aiEl.textContent=isPrem?'Premium Advisor':'Basic Analysis';
   updateLogoBadges(cfg.logo);
   renderSubjectChips();
+  const subjScanBox=$('subj-premium-scan'), subjNudgeBox=$('subj-premium-nudge');
+  if (subjScanBox) subjScanBox.style.display = isPrem ? 'block' : 'none';
+  if (subjNudgeBox) subjNudgeBox.style.display = isPrem ? 'none' : 'block';
   loadGeminiKeySetting();
   loadBankDetails();
 }
@@ -5348,6 +5351,45 @@ function loadPresetSubjects(type) {
   };
   SD.config.subjects = presets[type] || presets.primary;
   renderSubjectChips();
+}
+
+// ── Subject list / curriculum photo scan (Premium) ────────────────────────
+// Photograph a printed curriculum sheet, timetable header, or subject list
+// and bulk-extract the subject names instead of typing each one.
+async function scanSubjectList(event) {
+  const file = event.target.files[0]; if (!file) return;
+  event.target.value = '';
+  const fb = document.getElementById('subj-scan-fb');
+  const show = m => { if (fb) { fb.style.display = 'block'; fb.textContent = m; } };
+  if (!navigator.onLine) { show('❌ No internet connection.'); return; }
+  show('📸 Reading subject list...');
+  try {
+    const resized = await _resizeFeeImage(file, 1200);
+    const key = await _getFeeGroqKey();
+    if (!key) { show('❌ Groq key not found — ask Bayo to add it in portal settings.'); return; }
+    const prompt = `You are reading a photograph of a Nigerian school curriculum sheet, timetable, or list of subject names.
+Extract every distinct subject name visible (e.g. "Mathematics", "English Language", "Basic Science & Technology").
+${_OCR_DISCIPLINE}
+Output ONLY: {"subjects":["Subject Name 1","Subject Name 2"]}
+If nothing legible is found, output: {"subjects":[]}`;
+    const result = await _callGroqGenericVision(key, resized.base64, resized.mimeType, prompt, 600);
+    if (fb) fb.style.display = 'none';
+    const found = Array.isArray(result.subjects) ? result.subjects.filter(s => s && s !== 'UNCLEAR') : [];
+    if (!found.length) { show('❌ No subjects found — try a clearer photo, or add manually below.'); return; }
+    if (!SD.config.subjects) SD.config.subjects = [];
+    let added = 0;
+    found.forEach(s => {
+      const clean = String(s).trim();
+      if (clean && !SD.config.subjects.some(x => x.toLowerCase() === clean.toLowerCase())) {
+        SD.config.subjects.push(clean); added++;
+      }
+    });
+    renderSubjectChips();
+    show(`✅ Added ${added} subject${added!==1?'s':''} from photo — review the list above before saving.`);
+    setTimeout(() => { if (fb) fb.style.display = 'none'; }, 5000);
+  } catch(e) {
+    show('❌ ' + (e.message || 'Could not read subject list. Try a clearer photo.'));
+  }
 }
 
 
