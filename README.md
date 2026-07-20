@@ -35,6 +35,8 @@ shared (`educationbloom-699ed`), same as every other EduBloom app.
 | Add Student — 📷 scan admission form/ID | ❌ | ✅ |
 | Add Staff — type manually | ✅ | ✅ |
 | Add Staff — 📷 scan staff ID/CV | ❌ | ✅ |
+| Settings: Subjects — type/preset manually | ✅ | ✅ |
+| Settings: Subjects — 📷 scan curriculum/timetable | ❌ | ✅ |
 | BloomCollect, safety features | ✅ (already existed) | ✅ |
 
 Gate is `SD.config.plan === 'premium'` — same field/mechanism BloomCollect
@@ -75,6 +77,10 @@ handles all four new entry points — each just supplies its own prompt.
 - **Student admission form/ID** → name, parent phone, class, date of birth
 - **Staff ID/CV** → name, email only (intentionally minimal — role and
   password always require human judgement)
+- **Subject list/curriculum (Settings)** → bulk-extracts every distinct
+  subject name from a photographed curriculum sheet or timetable, merges
+  into the existing subject chip list without duplicates (case-insensitive
+  match against what's already there)
 
 ---
 
@@ -102,7 +108,8 @@ to keep this sandbox isolated from real school data.
 
 1. ✅ Full production copy + collection rename
 2. ✅ OCR added: expense receipt, payment teller, student admission
-   form/ID, staff ID/CV — all premium-gated
+   form/ID, staff ID/CV, subject list/curriculum (Settings) — all
+   premium-gated
 3. 🔜 **Field-test all four OCR entry points** against real documents
    before considering this ready to port back into production
 4. 🔜 Port working code into live `School-Bloom` once validated (mirrors
@@ -121,3 +128,4 @@ to keep this sandbox isolated from real school data.
 
 *Maintained by Claude (Anthropic). Last major update: 2026-07-19 — full
 production copy + premium OCR entry points.*
+
