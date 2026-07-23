@@ -954,6 +954,33 @@ function getGrade(tot) {
   if (tot >= 40) return { g: 'D', r: 'Fair', col: 'orange' };
   return { g: 'F', r: 'Fail', col: 'var(--danger)' };
 }
+// ── Score validation helpers ──────────────────────────────────────────
+// Caps CA values to 0–10 and Exam to 0–70 to catch OCR misreads and
+// impossible entries. Returns the capped values + flags.
+function _capScoreEntry(v) {
+  if (!v) v = { ca1:0, ca2:0, ca3:0, exam:0 };
+  const cap = (val, max) => {
+    const n = Number(val) || 0;
+    return { raw: n, capped: Math.max(0, Math.min(max, n)), over: n > max };
+  };
+  const ca1 = cap(v.ca1, 10);
+  const ca2 = cap(v.ca2, 10);
+  const ca3 = cap(v.ca3, 10);
+  const exam = cap(v.exam, 70);
+  const caT = ca1.capped + ca2.capped + ca3.capped;
+  const tot = caT + exam.capped;
+  const hasOverflow = ca1.over || ca2.over || ca3.over || exam.over;
+  return { ca1: ca1.capped, ca2: ca2.capped, ca3: ca3.capped, exam: exam.capped,
+           ca1Raw: ca1.raw, ca2Raw: ca2.raw, ca3Raw: ca3.raw, examRaw: exam.raw,
+           caT, tot, hasOverflow };
+}
+
+// Returns true if a subject entry actually exists in the term data
+// (distinguishes "student scored 0" from "no scores entered yet")
+function _hasScoreEntry(termData, sub) {
+  return termData && termData[sub] && typeof termData[sub] === 'object';
+}
+
 function toast(msg) {
   let box = $('toast-box');
   if (!box) {
@@ -2572,19 +2599,30 @@ function buildScores(s, idx) {
     const termData = (SD.scores[term]||{})[sid] || {};
     let totalSum = 0, subCount = 0;
     const rows = subs.map(sub => {
-      const v = termData[sub] || { ca1:0, ca2:0, ca3:0, exam:0 };
-      const caT = (v.ca1||0)+(v.ca2||0)+(v.ca3||0);
-      const tot = caT + (v.exam||0);
-      if (tot > 0) { totalSum += tot; subCount++; }
+      if (!_hasScoreEntry(termData, sub)) {
+        return `<tr>
+          <td style="font-weight:600;font-size:0.76rem;max-width:90px;">${esc(sub)}</td>
+          <td><input type="number" min="0" max="10" value="" placeholder="0" onchange="updateScore(${idx},'${term}','${esc(sub)}','ca1',this.value)" style="margin:0;width:38px;font-size:0.75rem;text-align:center;padding:3px;"></td>
+          <td><input type="number" min="0" max="10" value="" placeholder="0" onchange="updateScore(${idx},'${term}','${esc(sub)}','ca2',this.value)" style="margin:0;width:38px;font-size:0.75rem;text-align:center;padding:3px;"></td>
+          <td><input type="number" min="0" max="10" value="" placeholder="0" onchange="updateScore(${idx},'${term}','${esc(sub)}','ca3',this.value)" style="margin:0;width:38px;font-size:0.75rem;text-align:center;padding:3px;"></td>
+          <td style="font-weight:700;font-size:0.8rem;font-family:'DM Mono',monospace;color:var(--sub);"></td>
+          <td><input type="number" min="0" max="70" value="" placeholder="0" onchange="updateScore(${idx},'${term}','${esc(sub)}','exam',this.value)" style="margin:0;width:42px;font-size:0.75rem;text-align:center;padding:3px;"></td>
+          <td style="font-weight:800;font-size:0.85rem;font-family:'DM Mono',monospace;"></td>
+          <td></td>
+        </tr>`;
+      }
+      const e = _capScoreEntry(termData[sub]);
+      if (e.tot > 0 || _hasScoreEntry(termData, sub)) { totalSum += e.tot; subCount++; }
+      const ovFlag = e.hasOverflow ? '⚠️ ' : '';
       return `<tr>
         <td style="font-weight:600;font-size:0.76rem;max-width:90px;">${esc(sub)}</td>
-        <td><input type="number" min="0" max="10" value="${v.ca1||''}" placeholder="0" onchange="updateScore(${idx},'${term}','${esc(sub)}','ca1',this.value)" style="margin:0;width:38px;font-size:0.75rem;text-align:center;padding:3px;"></td>
-        <td><input type="number" min="0" max="10" value="${v.ca2||''}" placeholder="0" onchange="updateScore(${idx},'${term}','${esc(sub)}','ca2',this.value)" style="margin:0;width:38px;font-size:0.75rem;text-align:center;padding:3px;"></td>
-        <td><input type="number" min="0" max="10" value="${v.ca3||''}" placeholder="0" onchange="updateScore(${idx},'${term}','${esc(sub)}','ca3',this.value)" style="margin:0;width:38px;font-size:0.75rem;text-align:center;padding:3px;"></td>
-        <td style="font-weight:700;font-size:0.8rem;font-family:'DM Mono',monospace;color:var(--sub);">${caT||''}</td>
-        <td><input type="number" min="0" max="70" value="${v.exam||''}" placeholder="0" onchange="updateScore(${idx},'${term}','${esc(sub)}','exam',this.value)" style="margin:0;width:42px;font-size:0.75rem;text-align:center;padding:3px;"></td>
-        <td style="font-weight:800;font-size:0.85rem;font-family:'DM Mono',monospace;color:${tot>=70?'var(--money)':tot>=50?'var(--text)':'var(--danger)'};">${tot||''}</td>
-        <td>${tot>0?gradeRow(tot):''}</td>
+        <td><input type="number" min="0" max="10" value="${e.ca1||''}" placeholder="0" onchange="updateScore(${idx},'${term}','${esc(sub)}','ca1',this.value)" style="margin:0;width:38px;font-size:0.75rem;text-align:center;padding:3px;${e.ca1Raw>10?'border-color:var(--danger);':''}"></td>
+        <td><input type="number" min="0" max="10" value="${e.ca2||''}" placeholder="0" onchange="updateScore(${idx},'${term}','${esc(sub)}','ca2',this.value)" style="margin:0;width:38px;font-size:0.75rem;text-align:center;padding:3px;${e.ca2Raw>10?'border-color:var(--danger);':''}"></td>
+        <td><input type="number" min="0" max="10" value="${e.ca3||''}" placeholder="0" onchange="updateScore(${idx},'${term}','${esc(sub)}','ca3',this.value)" style="margin:0;width:38px;font-size:0.75rem;text-align:center;padding:3px;${e.ca3Raw>10?'border-color:var(--danger);':''}"></td>
+        <td style="font-weight:700;font-size:0.8rem;font-family:'DM Mono',monospace;color:var(--sub);">${e.caT||''}</td>
+        <td><input type="number" min="0" max="70" value="${e.exam||''}" placeholder="0" onchange="updateScore(${idx},'${term}','${esc(sub)}','exam',this.value)" style="margin:0;width:42px;font-size:0.75rem;text-align:center;padding:3px;${e.examRaw>70?'border-color:var(--danger);':''}"></td>
+        <td style="font-weight:800;font-size:0.85rem;font-family:'DM Mono',monospace;color:${e.tot>=70?'var(--money)':e.tot>=50?'var(--text)':'var(--danger)'};">${ovFlag}${e.tot||''}</td>
+        <td>${gradeRow(e.tot)}</td>
       </tr>`;
     }).join('');
     const avg = subCount ? Math.round(totalSum/subCount) : 0;
@@ -2640,17 +2678,27 @@ function scorecardSetTerm(term, idx) {
       let totalSum=0, subCount=0;
       const gradeRow = (tot) => { const {g,col}=getGrade(tot); return `<span style="font-weight:700;color:${col};font-size:0.8rem;">${g}</span>`; };
       const rows = subs.map(sub=>{
-        const v=termData[sub]||{ca1:0,ca2:0,ca3:0,exam:0};
-        const caT=(v.ca1||0)+(v.ca2||0)+(v.ca3||0); const tot=caT+(v.exam||0);
-        if(tot>0){totalSum+=tot;subCount++;}
+        if (!_hasScoreEntry(termData, sub)) {
+          return `<tr><td style="font-weight:600;font-size:0.76rem;max-width:90px;">${esc(sub)}</td>
+          <td><input type="number" min="0" max="10" value="" placeholder="0" onchange="updateScore(${idx},'${term}','${esc(sub)}','ca1',this.value)" style="margin:0;width:38px;font-size:0.75rem;text-align:center;padding:3px;"></td>
+          <td><input type="number" min="0" max="10" value="" placeholder="0" onchange="updateScore(${idx},'${term}','${esc(sub)}','ca2',this.value)" style="margin:0;width:38px;font-size:0.75rem;text-align:center;padding:3px;"></td>
+          <td><input type="number" min="0" max="10" value="" placeholder="0" onchange="updateScore(${idx},'${term}','${esc(sub)}','ca3',this.value)" style="margin:0;width:38px;font-size:0.75rem;text-align:center;padding:3px;"></td>
+          <td style="font-weight:700;font-size:0.8rem;font-family:'DM Mono',monospace;color:var(--sub);"></td>
+          <td><input type="number" min="0" max="70" value="" placeholder="0" onchange="updateScore(${idx},'${term}','${esc(sub)}','exam',this.value)" style="margin:0;width:42px;font-size:0.75rem;text-align:center;padding:3px;"></td>
+          <td style="font-weight:800;font-size:0.85rem;font-family:'DM Mono',monospace;"></td>
+          <td></td></tr>`;
+        }
+        const e=_capScoreEntry(termData[sub]);
+        if(e.tot>0||_hasScoreEntry(termData,sub)){totalSum+=e.tot;subCount++;}
+        const ovFlag=e.hasOverflow?'⚠️ ':'';
         return `<tr><td style="font-weight:600;font-size:0.76rem;max-width:90px;">${esc(sub)}</td>
-          <td><input type="number" min="0" max="10" value="${v.ca1||''}" placeholder="0" onchange="updateScore(${idx},'${term}','${esc(sub)}','ca1',this.value)" style="margin:0;width:38px;font-size:0.75rem;text-align:center;padding:3px;"></td>
-          <td><input type="number" min="0" max="10" value="${v.ca2||''}" placeholder="0" onchange="updateScore(${idx},'${term}','${esc(sub)}','ca2',this.value)" style="margin:0;width:38px;font-size:0.75rem;text-align:center;padding:3px;"></td>
-          <td><input type="number" min="0" max="10" value="${v.ca3||''}" placeholder="0" onchange="updateScore(${idx},'${term}','${esc(sub)}','ca3',this.value)" style="margin:0;width:38px;font-size:0.75rem;text-align:center;padding:3px;"></td>
-          <td style="font-weight:700;font-size:0.8rem;font-family:'DM Mono',monospace;color:var(--sub);">${caT||''}</td>
-          <td><input type="number" min="0" max="70" value="${v.exam||''}" placeholder="0" onchange="updateScore(${idx},'${term}','${esc(sub)}','exam',this.value)" style="margin:0;width:42px;font-size:0.75rem;text-align:center;padding:3px;"></td>
-          <td style="font-weight:800;font-size:0.85rem;font-family:'DM Mono',monospace;color:${tot>=70?'var(--money)':tot>=50?'var(--text)':'var(--danger)'};">${tot||''}</td>
-          <td>${tot>0?gradeRow(tot):''}</td></tr>`;
+          <td><input type="number" min="0" max="10" value="${e.ca1||''}" placeholder="0" onchange="updateScore(${idx},'${term}','${esc(sub)}','ca1',this.value)" style="margin:0;width:38px;font-size:0.75rem;text-align:center;padding:3px;${e.ca1Raw>10?'border-color:var(--danger);':''}"></td>
+          <td><input type="number" min="0" max="10" value="${e.ca2||''}" placeholder="0" onchange="updateScore(${idx},'${term}','${esc(sub)}','ca2',this.value)" style="margin:0;width:38px;font-size:0.75rem;text-align:center;padding:3px;${e.ca2Raw>10?'border-color:var(--danger);':''}"></td>
+          <td><input type="number" min="0" max="10" value="${e.ca3||''}" placeholder="0" onchange="updateScore(${idx},'${term}','${esc(sub)}','ca3',this.value)" style="margin:0;width:38px;font-size:0.75rem;text-align:center;padding:3px;${e.ca3Raw>10?'border-color:var(--danger);':''}"></td>
+          <td style="font-weight:700;font-size:0.8rem;font-family:'DM Mono',monospace;color:var(--sub);">${e.caT||''}</td>
+          <td><input type="number" min="0" max="70" value="${e.exam||''}" placeholder="0" onchange="updateScore(${idx},'${term}','${esc(sub)}','exam',this.value)" style="margin:0;width:42px;font-size:0.75rem;text-align:center;padding:3px;${e.examRaw>70?'border-color:var(--danger);':''}"></td>
+          <td style="font-weight:800;font-size:0.85rem;font-family:'DM Mono',monospace;color:${e.tot>=70?'var(--money)':e.tot>=50?'var(--text)':'var(--danger)'};">${ovFlag}${e.tot||''}</td>
+          <td>${gradeRow(e.tot)}</td></tr>`;
       }).join('');
       const avg = subCount?Math.round(totalSum/subCount):0;
       tableEl.innerHTML = `<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
@@ -2711,11 +2759,11 @@ function calcStudentTermStats(sid, term, subs) {
   const td = (SD.scores[term]||{})[sid] || {};
   let total = 0, count = 0; const perSub = {};
   subs.forEach(sub => {
-    const v = td[sub] || { ca1:0, ca2:0, ca3:0, exam:0 };
-    const caT = (v.ca1||0)+(v.ca2||0)+(v.ca3||0);
-    const tot = caT + (v.exam||0);
-    perSub[sub] = { caT, exam: v.exam||0, tot };
-    if (tot > 0) { total += tot; count++; }
+    if (!_hasScoreEntry(td, sub)) { perSub[sub] = { caT:0, exam:0, tot:0, hasData:false }; return; }
+    const e = _capScoreEntry(td[sub]);
+    perSub[sub] = { caT: e.caT, exam: e.exam, tot: e.tot, hasData:true, hasOverflow:e.hasOverflow,
+                   ca1:e.ca1, ca2:e.ca2, ca3:e.ca3, ca1Raw:e.ca1Raw, ca2Raw:e.ca2Raw, ca3Raw:e.ca3Raw, examRaw:e.examRaw };
+    if (e.tot > 0 || _hasScoreEntry(td, sub)) { total += e.tot; count++; }
   });
   const avg = count ? Math.round(total/count) : 0;
   return { perSub, total, count, avg };
@@ -2727,9 +2775,9 @@ function calcCumulative(sid, subs) {
     let tSum=0, tCount=0;
     terms.forEach(term => {
       const td = (SD.scores[term]||{})[sid] || {};
-      const v = td[sub] || { ca1:0,ca2:0,ca3:0,exam:0 };
-      const tot = (v.ca1||0)+(v.ca2||0)+(v.ca3||0)+(v.exam||0);
-      if (tot > 0) { tSum += tot; tCount++; }
+      if (!_hasScoreEntry(td, sub)) return; // skip genuine gaps — don't treat as zero
+      const e = _capScoreEntry(td[sub]);
+      if (e.tot > 0 || _hasScoreEntry(td, sub)) { tSum += e.tot; tCount++; }
     });
     cumSub[sub] = tCount ? Math.round(tSum/tCount) : 0;
   });
@@ -2765,8 +2813,13 @@ function renderScorecard() {
   const isCum = activeView === 'Cumulative';
   const studentStats = classStudents.map(s => {
     const sid = s.id || SD.students.indexOf(s);
-    if (isCum) { const { cumSub, avg } = calcCumulative(sid, subs); return { s, sid, perSub: cumSub, avg }; }
-    const { perSub, avg } = calcStudentTermStats(sid, activeView, subs); return { s, sid, perSub, avg };
+    if (isCum) {
+      const { cumSub, avg } = calcCumulative(sid, subs);
+      const hasAny = subs.some(sub => cumSub[sub] > 0 || ['Term 1','Term 2','Term 3'].some(t => _hasScoreEntry((SD.scores[t]||{})[sid]||{}, sub)));
+      return { s, sid, perSub: cumSub, avg, hasData: hasAny };
+    }
+    const { perSub, avg, count } = calcStudentTermStats(sid, activeView, subs);
+    return { s, sid, perSub, avg, hasData: count > 0 };
   });
   const ranked = [...studentStats].sort((a,b)=>b.avg-a.avg);
   const posMap = {}; ranked.forEach((r,i)=>posMap[r.sid]=i+1);
@@ -2786,15 +2839,23 @@ function renderScorecard() {
     const pos = posMap[sid]; const {g,col} = getGrade(avg);
     const medal = pos===1?'🥇':pos===2?'🥈':pos===3?'🥉':'';
     const subCells = subs.map(sub=>{
-      const v = isCum?perSub[sub]:(perSub[sub]?.tot||0);
+      let v, hasSub;
+      if (isCum) {
+        v = perSub[sub]||0;
+        hasSub = ['Term 1','Term 2','Term 3'].some(t => _hasScoreEntry((SD.scores[t]||{})[sid]||{}, sub));
+      } else {
+        const ps = perSub[sub];
+        v = ps?.hasData ? ps.tot : 0;
+        hasSub = ps?.hasData;
+      }
       const {col:sc} = getGrade(v||0);
-      return `<td style="text-align:center;font-size:0.74rem;font-weight:700;color:${v>0?sc:'var(--border)'};padding:3px 2px;">${v||'–'}</td>`;
+      return `<td style="text-align:center;font-size:0.74rem;font-weight:700;color:${hasSub?(v>0?sc:'var(--danger)'):'var(--border)'};padding:3px 2px;">${hasSub?v:'–'}</td>`;
     }).join('');
     return `<tr><td style="text-align:center;font-weight:700;font-size:0.72rem;color:${col};">${medal}${pos}</td>
       <td style="font-size:0.74rem;font-weight:600;white-space:nowrap;min-width:110px;">${esc(s.name)}</td>
       ${subCells}
       <td style="text-align:center;font-weight:800;font-size:0.82rem;color:${col};">${avg||'–'}</td>
-      <td style="text-align:center;"><span style="font-weight:700;font-size:0.74rem;color:${col};">${avg>0?g:'–'}</span></td></tr>`;
+      <td style="text-align:center;"><span style="font-weight:700;font-size:0.74rem;color:${col};">${hasData?g:'–'}</span></td></tr>`;
   }).join('');
 
   const top3 = ranked.filter(r=>r.avg>0).slice(0,3);
@@ -2851,25 +2912,28 @@ function printReportCard(idx, term) {
   const myPos = (allAvgs.findIndex(r=>r.name===s.name)+1)||'–';
 
   const rows = subs.map(sub => {
-    const v = termData[sub] || {ca1:0,ca2:0,ca3:0,exam:0};
-    const caT = (v.ca1||0)+(v.ca2||0)+(v.ca3||0);
-    const tot = caT+(v.exam||0);
-    const {g} = getGrade(tot);
+    if (!_hasScoreEntry(termData, sub)) {
+      return `<tr><td>${esc(sub)}</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>`;
+    }
+    const e = _capScoreEntry(termData[sub]);
+    const {g} = getGrade(e.tot);
     const subRanked = classStudents.map(st=>{
       const stid = st.id || SD.students.indexOf(st);
       const sv = (SD.scores[term]||{})[stid]||{};
-      const svs = sv[sub]||{};
-      const stot = (svs.ca1||0)+(svs.ca2||0)+(svs.ca3||0)+(svs.exam||0);
-      return { name: st.name, tot: stot };
+      if (!_hasScoreEntry(sv, sub)) return { name: st.name, tot: 0 };
+      const se = _capScoreEntry(sv[sub]);
+      return { name: st.name, tot: se.tot };
     }).sort((a,b)=>b.tot-a.tot);
     const sPos = (subRanked.findIndex(r=>r.name===s.name)+1)||'–';
-    return `<tr><td>${esc(sub)}</td><td>${v.ca1||''}</td><td>${v.ca2||''}</td><td>${v.ca3||''}</td><td>${caT||''}</td><td>${v.exam||''}</td>
-      <td style="font-weight:700;color:${tot>=70?'green':tot>=50?'#333':'red'};">${tot||''}</td>
-      <td style="font-weight:700;">${tot>0?g:''}</td><td>${tot>0?sPos:''}</td></tr>`;
+    const ovFlag = e.hasOverflow ? '⚠️' : '';
+    return `<tr><td>${esc(sub)}</td><td>${e.ca1||''}</td><td>${e.ca2||''}</td><td>${e.ca3||''}</td><td>${e.caT||''}</td><td>${e.exam||''}</td>
+      <td style="font-weight:700;color:${e.tot>=70?'green':e.tot>=50?'#333':'red'};">${ovFlag}${e.tot||''}</td>
+      <td style="font-weight:700;">${g}</td><td>${sPos}</td></tr>`;
   }).join('');
 
-  const totals = subs.map(sub=>{const v=termData[sub]||{};return(v.ca1||0)+(v.ca2||0)+(v.ca3||0)+(v.exam||0);}).filter(v=>v>0);
-  const avg = totals.length?Math.round(totals.reduce((a,b)=>a+b,0)/totals.length):0;
+  const totals = subs.filter(sub=>_hasScoreEntry(termData,sub)).map(sub=>{const e=_capScoreEntry(termData[sub]);return e.tot;}).filter(v=>v>0);
+  const allZeroCount = subs.filter(sub=>_hasScoreEntry(termData,sub)&&_capScoreEntry(termData[sub]).tot===0).length;
+  const avg = (totals.length||allZeroCount)?Math.round(totals.reduce((a,b)=>a+b,0)/Math.max(totals.length,1)):0;
   const affTraits=['Punctuality','Neatness','Attentiveness','Honesty','Politeness','Relationship with others'];
   const psyTraits=['Handwriting','Sports Ability','Drawing & Craft','Class Participation'];
   const stars=n=>['','★','★★','★★★','★★★★','★★★★★'][n]||'–';
@@ -3045,9 +3109,9 @@ function printBroadsheet(cls, view) {
   }).sort((a,b)=>b.avg-a.avg);
   const thCells = subs.map(s=>`<th style="writing-mode:vertical-lr;transform:rotate(180deg);font-size:9px;padding:2px;">${esc(s)}</th>`).join('');
   const rows = stats.map(({s,perSub,avg},i)=>{
-    const cells = subs.map(sub=>{const v=isCum?perSub[sub]:(perSub[sub]?.tot||0);return`<td style="text-align:center;font-size:9.5px;">${v||'–'}</td>`;}).join('');
+    const cells = subs.map(sub=>{if(isCum){const v=cumSub[sub]||0;return`<td style="text-align:center;font-size:9.5px;">${v||'–'}</td>`;}const ps=perSub[sub];if(!ps||!ps.hasData)return`<td style="text-align:center;font-size:9.5px;color:#ccc;">–</td>`;return`<td style="text-align:center;font-size:9.5px;">${ps.tot}</td>`;}).join('');
     const {g}=getGrade(avg);
-    return `<tr><td>${i+1}</td><td style="white-space:nowrap;font-size:10px;">${esc(s.name)}</td>${cells}<td style="font-weight:700;">${avg||'–'}</td><td>${avg>0?g:''}</td></tr>`;
+    return `<tr><td>${i+1}</td><td style="white-space:nowrap;font-size:10px;">${esc(s.name)}</td>${cells}<td style="font-weight:700;">${avg||'–'}</td><td>${stats[i].count>0?g:'–'}</td></tr>`;
   }).join('');
   const w = window.open('','_blank','width=1100,height=800'); if (!w) return;
   w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Broadsheet</title>
@@ -3077,26 +3141,26 @@ function renderBulkScoreGrid(cls, term, subIdx) {
 
   const rows = classStudents.map((s,i)=>{
     const sid = s.id || SD.students.indexOf(s);
-    const v = ((SD.scores[term]||{})[sid]||{})[sub] || {ca1:0,ca2:0,ca3:0,exam:0};
-    const caT = (v.ca1||0)+(v.ca2||0)+(v.ca3||0);
-    const tot = caT+(v.exam||0);
-    const {g,col}=getGrade(tot);
+    const td = ((SD.scores[term]||{})[sid]||{});
+    const hasData = _hasScoreEntry(td, sub);
+    const e = hasData ? _capScoreEntry(td[sub]) : { ca1:0,ca2:0,ca3:0,exam:0,ca1Raw:0,ca2Raw:0,ca3Raw:0,examRaw:0,caT:0,tot:0,hasOverflow:false };
+    const {g,col}=getGrade(e.tot);
     const tabBase = i*4;
-    return `<tr id="bsg-row-${i}" style="${tot>=70?'background:rgba(16,185,129,0.04)':''}">
+    return `<tr id="bsg-row-${i}" style="${e.tot>=70?'background:rgba(16,185,129,0.04)':''}">
       <td style="font-size:0.76rem;font-weight:600;padding:5px 6px;white-space:nowrap;">${esc(s.name)}</td>
-      <td style="padding:2px;"><input type="number" min="0" max="10" value="${v.ca1||''}" tabindex="${tabBase+1}" placeholder="0" onchange="bsgUpdate('${esc(cls)}','${esc(term)}','${esc(sub)}',${i},'ca1',this.value)" onkeydown="bsgNav(event,${i},0,${classStudents.length})" style="width:44px;text-align:center;margin:0;font-size:0.8rem;padding:4px 2px;border:1px solid ${v.ca1?'var(--brand)':'var(--border)'};border-radius:6px;" id="bsg-${i}-0"></td>
-      <td style="padding:2px;"><input type="number" min="0" max="10" value="${v.ca2||''}" tabindex="${tabBase+2}" placeholder="0" onchange="bsgUpdate('${esc(cls)}','${esc(term)}','${esc(sub)}',${i},'ca2',this.value)" onkeydown="bsgNav(event,${i},1,${classStudents.length})" style="width:44px;text-align:center;margin:0;font-size:0.8rem;padding:4px 2px;border:1px solid ${v.ca2?'var(--brand)':'var(--border)'};border-radius:6px;" id="bsg-${i}-1"></td>
-      <td style="padding:2px;"><input type="number" min="0" max="10" value="${v.ca3||''}" tabindex="${tabBase+3}" placeholder="0" onchange="bsgUpdate('${esc(cls)}','${esc(term)}','${esc(sub)}',${i},'ca3',this.value)" onkeydown="bsgNav(event,${i},2,${classStudents.length})" style="width:44px;text-align:center;margin:0;font-size:0.8rem;padding:4px 2px;border:1px solid ${v.ca3?'var(--brand)':'var(--border)'};border-radius:6px;" id="bsg-${i}-2"></td>
-      <td style="padding:2px;"><input type="number" min="0" max="70" value="${v.exam||''}" tabindex="${tabBase+4}" placeholder="0" onchange="bsgUpdate('${esc(cls)}','${esc(term)}','${esc(sub)}',${i},'exam',this.value)" onkeydown="bsgNav(event,${i},3,${classStudents.length})" style="width:48px;text-align:center;margin:0;font-size:0.8rem;padding:4px 2px;border:1px solid ${v.exam?'var(--brand)':'var(--border)'};border-radius:6px;" id="bsg-${i}-3"></td>
-      <td style="text-align:center;font-weight:700;font-family:'DM Mono',monospace;font-size:0.82rem;color:${tot>0?'var(--text)':'var(--border)'};">${tot||'–'}</td>
-      <td style="text-align:center;"><span style="font-weight:700;font-size:0.76rem;color:${col};">${tot>0?g:'–'}</span></td>
+      <td style="padding:2px;"><input type="number" min="0" max="10" value="${e.ca1||''}" tabindex="${tabBase+1}" placeholder="0" onchange="bsgUpdate('${esc(cls)}','${esc(term)}','${esc(sub)}',${i},'ca1',this.value)" onkeydown="bsgNav(event,${i},0,${classStudents.length})" style="width:44px;text-align:center;margin:0;font-size:0.8rem;padding:4px 2px;border:1px solid ${e.ca1Raw>10?'var(--danger)':e.ca1?'var(--brand)':'var(--border)'};border-radius:6px;" id="bsg-${i}-0"></td>
+      <td style="padding:2px;"><input type="number" min="0" max="10" value="${e.ca2||''}" tabindex="${tabBase+2}" placeholder="0" onchange="bsgUpdate('${esc(cls)}','${esc(term)}','${esc(sub)}',${i},'ca2',this.value)" onkeydown="bsgNav(event,${i},1,${classStudents.length})" style="width:44px;text-align:center;margin:0;font-size:0.8rem;padding:4px 2px;border:1px solid ${e.ca2Raw>10?'var(--danger)':e.ca2?'var(--brand)':'var(--border)'};border-radius:6px;" id="bsg-${i}-1"></td>
+      <td style="padding:2px;"><input type="number" min="0" max="10" value="${e.ca3||''}" tabindex="${tabBase+3}" placeholder="0" onchange="bsgUpdate('${esc(cls)}','${esc(term)}','${esc(sub)}',${i},'ca3',this.value)" onkeydown="bsgNav(event,${i},2,${classStudents.length})" style="width:44px;text-align:center;margin:0;font-size:0.8rem;padding:4px 2px;border:1px solid ${e.ca3Raw>10?'var(--danger)':e.ca3?'var(--brand)':'var(--border)'};border-radius:6px;" id="bsg-${i}-2"></td>
+      <td style="padding:2px;"><input type="number" min="0" max="70" value="${e.exam||''}" tabindex="${tabBase+4}" placeholder="0" onchange="bsgUpdate('${esc(cls)}','${esc(term)}','${esc(sub)}',${i},'exam',this.value)" onkeydown="bsgNav(event,${i},3,${classStudents.length})" style="width:48px;text-align:center;margin:0;font-size:0.8rem;padding:4px 2px;border:1px solid ${e.examRaw>70?'var(--danger)':e.exam?'var(--brand)':'var(--border)'};border-radius:6px;" id="bsg-${i}-3"></td>
+      <td style="text-align:center;font-weight:700;font-family:'DM Mono',monospace;font-size:0.82rem;color:${hasData?(e.tot>0?'var(--text)':'var(--danger)'):'var(--border)'};">${hasData?(e.hasOverflow?'⚠️ ':'')+e.tot:'–'}</td>
+      <td style="text-align:center;"><span style="font-weight:700;font-size:0.76rem;color:${col};">${hasData?g:'–'}</span></td>
     </tr>`;
   }).join('');
 
   const entered = classStudents.filter(s=>{
     const sid=s.id||SD.students.indexOf(s);
-    const v=((SD.scores[term]||{})[sid]||{})[sub]||{};
-    return (v.ca1||0)+(v.ca2||0)+(v.ca3||0)+(v.exam||0)>0;
+    const td=((SD.scores[term]||{})[sid]||{});
+    return _hasScoreEntry(td, sub);
   }).length;
 
   el.innerHTML = `<div class="card" style="padding:0.75rem 0.5rem;">
@@ -3131,16 +3195,17 @@ function bsgUpdate(cls, term, sub, rowIdx, field, val) {
   if (!SD.scores[term][sid][sub]) SD.scores[term][sid][sub]={ca1:0,ca2:0,ca3:0,exam:0};
   SD.scores[term][sid][sub][field] = parseInt(val)||0;
   const v = SD.scores[term][sid][sub];
-  const tot = (v.ca1||0)+(v.ca2||0)+(v.ca3||0)+(v.exam||0);
+  const e = _capScoreEntry(v);
   const row = $('bsg-row-'+rowIdx);
   if (row) {
     const cells = row.querySelectorAll('td');
-    const {g,col}=getGrade(tot);
-    if (cells[5]) cells[5].textContent = tot||'–';
-    if (cells[6]) cells[6].innerHTML = `<span style="font-weight:700;font-size:0.76rem;color:${col};">${tot>0?g:'–'}</span>`;
-    row.style.background = tot>=70?'rgba(16,185,129,0.04)':'';
+    const {g,col}=getGrade(e.tot);
+    if (cells[5]) cells[5].textContent = e.hasOverflow ? '⚠️ '+e.tot : (e.tot||'–');
+    if (cells[6]) cells[6].innerHTML = `<span style="font-weight:700;font-size:0.76rem;color:${col};">${g}</span>`;
+    row.style.background = e.tot>=70?'rgba(16,185,129,0.04)':'';
     const inp = $(`bsg-${rowIdx}-${['ca1','ca2','ca3','exam'].indexOf(field)}`);
-    if (inp) inp.style.borderColor = val?'var(--brand)':'var(--border)';
+    const maxVal = field==='exam'?70:10;
+    if (inp) inp.style.borderColor = (parseInt(val)>maxVal)?'var(--danger)':(val?'var(--brand)':'var(--border)');
   }
 }
 
@@ -3173,19 +3238,23 @@ function printAllReportCards(cls, term) {
     const myPos = (allAvgs.findIndex(r=>r.name===s.name)+1)||'–';
     const daysPresent = Object.values(SD.attendance||{}).filter(day=>day[s.name]==='Present').length;
     const rows = subs.map(sub=>{
-      const v=termData[sub]||{ca1:0,ca2:0,ca3:0,exam:0};
-      const caT=(v.ca1||0)+(v.ca2||0)+(v.ca3||0); const tot=caT+(v.exam||0); const {g}=getGrade(tot);
+      if (!_hasScoreEntry(termData, sub)) {
+        return `<tr><td>${esc(sub)}</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>`;
+      }
+      const e=_capScoreEntry(termData[sub]); const {g}=getGrade(e.tot);
       const subRanked = classStudents.map(st=>{
         const stid=st.id||SD.students.indexOf(st);
-        const sv=((SD.scores[term]||{})[stid]||{})[sub]||{};
-        return {name:st.name,tot:(sv.ca1||0)+(sv.ca2||0)+(sv.ca3||0)+(sv.exam||0)};
+        const sv=((SD.scores[term]||{})[stid]||{});
+        if (!_hasScoreEntry(sv, sub)) return {name:st.name,tot:0};
+        const se=_capScoreEntry(sv[sub]);
+        return {name:st.name,tot:se.tot};
       }).sort((a,b)=>b.tot-a.tot);
       const sPos = (subRanked.findIndex(r=>r.name===s.name)+1)||'–';
-      return `<tr><td>${esc(sub)}</td><td>${v.ca1||''}</td><td>${v.ca2||''}</td><td>${v.ca3||''}</td><td>${caT||''}</td><td>${v.exam||''}</td>
-        <td style="font-weight:700;color:${tot>=70?'green':tot>=50?'#333':'red'};">${tot||''}</td><td style="font-weight:700;">${tot>0?g:''}</td><td>${tot>0?sPos:''}</td></tr>`;
+      const ovFlag=e.hasOverflow?'⚠️':'';
+      return `<tr><td>${esc(sub)}</td><td>${e.ca1||''}</td><td>${e.ca2||''}</td><td>${e.ca3||''}</td><td>${e.caT||''}</td><td>${e.exam||''}</td>
+        <td style="font-weight:700;color:${e.tot>=70?'green':e.tot>=50?'#333':'red'};">${ovFlag}${e.tot||''}</td><td style="font-weight:700;">${g}</td><td>${sPos}</td></tr>`;
     }).join('');
-    const totals = subs.map(sub=>{const v=termData[sub]||{};return(v.ca1||0)+(v.ca2||0)+(v.ca3||0)+(v.exam||0);}).filter(v=>v>0);
-    const avg = totals.length?Math.round(totals.reduce((a,b)=>a+b,0)/totals.length):0;
+    const {avg:avg, count:dataCount} = calcStudentTermStats(sid, term, subs);
     const affTraits=['Punctuality','Neatness','Attentiveness','Honesty','Politeness','Relationship with others'];
     const psyTraits=['Handwriting','Sports Ability','Drawing & Craft','Class Participation'];
     const stars=n=>['','★','★★','★★★','★★★★','★★★★★'][n]||'–';
@@ -3204,7 +3273,7 @@ function printAllReportCards(cls, term) {
         <div><b>Days Opened:</b> ${cfg.daysOpened||'–'}</div><div><b>Days Present:</b> ${daysPresent}</div></div>
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin:6px 0;text-align:center;">
         <div style="border:1px solid #ccc;border-radius:4px;padding:5px;"><div style="font-size:15px;font-weight:800;color:#2563eb;">${avg||'–'}</div>Average</div>
-        <div style="border:1px solid #ccc;border-radius:4px;padding:5px;"><div style="font-size:15px;font-weight:800;color:#2563eb;">${avg>0?getGrade(avg).g:'–'}</div>Grade</div>
+        <div style="border:1px solid #ccc;border-radius:4px;padding:5px;"><div style="font-size:15px;font-weight:800;color:#2563eb;">${dataCount>0?getGrade(avg).g:'–'}</div>Grade</div>
         <div style="border:1px solid #ccc;border-radius:4px;padding:5px;"><div style="font-size:15px;font-weight:800;color:#2563eb;">${myPos}</div>Position</div>
         <div style="border:1px solid #ccc;border-radius:4px;padding:5px;"><div style="font-size:15px;font-weight:800;color:#2563eb;">${classStudents.length}</div>In Class</div></div>
       <div style="font-weight:700;font-size:11px;background:#e8e8e8;padding:3px 5px;margin:6px 0 3px;">ACADEMIC PERFORMANCE</div>

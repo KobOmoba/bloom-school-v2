@@ -145,3 +145,95 @@ Changes made:
 - `index.html`: `ns/sf/exp/subj-premium-scan` divs set to `display:block`
 
 Restore all gates before porting to production `School-Bloom`.
+
+---
+
+## 📷 Camera + Gallery Picker Fix
+
+**Date:** 2026-07-23
+
+Removed `capture="environment"` from all 10 scan file inputs so mobile
+users get the native picker offering both 📷 camera and 🖼️ gallery/files.
+
+Inputs affected (both `index.html` and `app.js`):
+- Fee register scan, CSV/photo bulk import, Subject list scan
+- Student form scan, Staff ID scan, Expense receipt scan
+- Payment receipt scan, Score OCR image input
+- Student photo upload, Edit photo upload
+
+---
+
+## 🧠 OCR Prompt Strengthening
+
+**Date:** 2026-07-23
+
+### Payment Receipt (#4) — strengthened
+Now extracts 4 extra fields beyond amount/date/method:
+- `payer` — who made the payment (FROM / DEPOSITOR / REMITTER)
+- `recipient` — school/account name receiving it (TO / BENEFICIARY)
+- `reference` — teller number, session ID, RRR
+- `account_no` — destination NUBAN (10-digit)
+
+Payer + reference shown in feedback bar after scan. max_tokens bumped 400→500.
+
+### Staff ID (#6) — strengthened
+Now extracts 2 extra fields beyond name/email:
+- `role` — job title (POSITION / DESIGNATION), auto-matched to the Role dropdown via fuzzy match
+- `phone` — contact number (PHONE / TEL / MOBILE)
+
+Role autofills dropdown when fuzzy-matched. Phone + unmatched role shown in feedback bar. max_tokens bumped 300→400.
+
+Prompt #1 (GROQ_OCR_PROMPT) intentionally left unchanged.
+
+---
+
+## 📊 Report Card Score Validation (Edge Case Hardening)
+
+**Date:** 2026-07-23
+
+Added score validation and capping across all score rendering paths —
+scorecard, report card, broadsheet, bulk entry grid, and cumulative view.
+Based on the 7-edge-case stress test (`edge_case_legend.json`) covering
+65 students × 13 subjects × 3 terms.
+
+### New helpers
+- `_capScoreEntry(v)` — caps CA values to 0–10, Exam to 0–70. Returns
+  capped values, raw values, capped total, and `hasOverflow` flag for
+  out-of-range detection (OCR misreads like exam=700).
+- `_hasScoreEntry(termData, sub)` — distinguishes "student scored 0"
+  from "no scores entered yet" by checking if the subject entry actually
+  exists in the term data object.
+
+### Edge cases addressed
+1. **Out-of-range values** (CA>10, Exam>70) — now capped to max. ⚠️ flag
+   shown on scorecard, report card, and bulk grid. Red border on
+   overflowing input fields. Prevents impossible totals like 123/100.
+2. **All-zero entries** — now grades F, not blank. Previously `tot>0`
+   treated 0 the same as "no data". Now uses `_hasScoreEntry()` to
+   distinguish genuine all-zero from missing data.
+3. **OCR misread** (exam=700) — capped to 70, ⚠️ flag visible on report
+   card and scorecard. Red border on the input field in bulk grid.
+4. **Missing subject in one term** — `calcCumulative()` now skips
+   genuine gaps (no entry = skip), doesn't treat as zero. Previously
+   defaulted to all-zeros which dragged the average down.
+5. **Boundary grades** (69=B, 70=A) — already correct, no change needed.
+
+### Functions updated
+- `calcStudentTermStats()` — uses `_capScoreEntry`, tracks `hasData` per subject
+- `calcCumulative()` — uses `_capScoreEntry`, skips genuine gaps
+- `buildScores()` / `buildTermTable()` — capped display, overflow flags, red borders
+- `scorecardSetTerm()` — same treatment for term-switch rerender
+- `printReportCard()` — capped values, ⚠️ flag, grade shown for all-zero
+- `printAllReportCards()` — same treatment for batch print
+- `printBroadsheet()` — capped cells, grade F for all-zero students
+- `renderScorecard()` — `hasData` flag, grade F for all-zero
+- `renderBulkScoreGrid()` — capped display, overflow flags, red borders
+- `bsgUpdate()` — live cap + flag on cell change
+
+### Test data
+See `report-card-test-data-README.md` for the full test data set:
+- `students_test_data.json` — 65 students, 5 classes
+- `scores_clean.json` — clean baseline scores
+- `scores_stress.json` — 7 injected edge cases (see `edge_case_legend.json`)
+- `sample_basic4and5_mathematics_term1.csv` — single CSV for OCR import test
+- `console_loader.js` — DevTools paste-to-load script
