@@ -2835,7 +2835,7 @@ function renderScorecard() {
   });
 
   const subHeaders = subs.map(sub=>`<th style="font-size:0.6rem;writing-mode:vertical-lr;transform:rotate(180deg);padding:3px;min-width:26px;">${esc(sub)}</th>`).join('');
-  const rows = studentStats.sort((a,b)=>posMap[a.sid]-posMap[b.sid]).map(({s,sid,perSub,avg})=>{
+  const rows = studentStats.sort((a,b)=>posMap[a.sid]-posMap[b.sid]).map(({s,sid,perSub,avg,hasData})=>{
     const pos = posMap[sid]; const {g,col} = getGrade(avg);
     const medal = pos===1?'🥇':pos===2?'🥈':pos===3?'🥉':'';
     const subCells = subs.map(sub=>{
@@ -3104,12 +3104,12 @@ function printBroadsheet(cls, view) {
   const classStudents = SD.students.filter(s=>s.class===cls);
   const stats = classStudents.map(s=>{
     const sid = s.id || SD.students.indexOf(s);
-    if (isCum) { const {cumSub,avg}=calcCumulative(sid,subs); return {s,perSub:cumSub,avg}; }
-    const {perSub,avg}=calcStudentTermStats(sid,view,subs); return {s,perSub,avg};
+    if (isCum) { const {cumSub,avg}=calcCumulative(sid,subs); const cnt=subs.reduce((n,sub)=>cumSub[sub]?n+1:n,0); return {s,perSub:cumSub,avg,count:cnt}; }
+    const {perSub,avg,count}=calcStudentTermStats(sid,view,subs); return {s,perSub,avg,count};
   }).sort((a,b)=>b.avg-a.avg);
   const thCells = subs.map(s=>`<th style="writing-mode:vertical-lr;transform:rotate(180deg);font-size:9px;padding:2px;">${esc(s)}</th>`).join('');
   const rows = stats.map(({s,perSub,avg},i)=>{
-    const cells = subs.map(sub=>{if(isCum){const v=cumSub[sub]||0;return`<td style="text-align:center;font-size:9.5px;">${v||'–'}</td>`;}const ps=perSub[sub];if(!ps||!ps.hasData)return`<td style="text-align:center;font-size:9.5px;color:#ccc;">–</td>`;return`<td style="text-align:center;font-size:9.5px;">${ps.tot}</td>`;}).join('');
+    const cells = subs.map(sub=>{if(isCum){const v=perSub[sub]||0;return`<td style="text-align:center;font-size:9.5px;">${v||'–'}</td>`;}const ps=perSub[sub];if(!ps||!ps.hasData)return`<td style="text-align:center;font-size:9.5px;color:#ccc;">–</td>`;return`<td style="text-align:center;font-size:9.5px;">${ps.tot}</td>`;}).join('');
     const {g}=getGrade(avg);
     return `<tr><td>${i+1}</td><td style="white-space:nowrap;font-size:10px;">${esc(s.name)}</td>${cells}<td style="font-weight:700;">${avg||'–'}</td><td>${stats[i].count>0?g:'–'}</td></tr>`;
   }).join('');
