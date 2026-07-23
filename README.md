@@ -237,3 +237,25 @@ See `report-card-test-data-README.md` for the full test data set:
 - `scores_stress.json` — 7 injected edge cases (see `edge_case_legend.json`)
 - `sample_basic4and5_mathematics_term1.csv` — single CSV for OCR import test
 - `console_loader.js` — DevTools paste-to-load script
+
+### Stress test results (2026-07-23, v2 only)
+**All 7 edge cases PASSED on bloom-school-v2:**
+
+| # | Student (idx) | Term | Subject | Edge Case | Raw | Capped | Expected | Result |
+|---|---|---|---|---|---|---|---|---|
+| 1 | OGUNDETI SALAM (0) | T1 | Math | Boundary B (69) | 10+10+10+39=69 | 69 | Score=69, Grade=B | ✅ PASS |
+| 2 | OYERINDE OYENEPO (1) | T1 | Math | Boundary A (70) | 10+10+10+40=70 | 70 | Score=70, Grade=A | ✅ PASS |
+| 3 | OLIVIDE BIGGOLD (7) | T1 | English | Partial data (nulls→0) | null+8+null+null | 8 | Score=8, hasData=true | ✅ PASS |
+| 4 | OLIYIDE GIFT (14) | T2 | BST | CA>10, Exam>70 | 15+12+11+85=123 | 10+10+10+70=100 | Score=100, ⚠️ flag | ✅ PASS |
+| 5 | OLIYIDE GODWIN (25) | T2 | Civic | All-zero=F | 0+0+0+0=0 | 0 | hasEntry=true, Grade=F | ✅ PASS |
+| 6 | OJEANE HATOBIN (50) | T3 | Math | Exam=700 | 10+10+10+700=730 | 10+10+10+70=100 | Score=100, ⚠️ flag | ✅ PASS |
+| 7 | GBELEKALE QUARDRI (8) | T2 | CS | Missing subject | null (deleted) | – | Dash in broadsheet, excluded from cumulative | ✅ PASS |
+
+**Additional verifications:**
+- Grade boundaries: getGrade(69)=B, getGrade(70)=A, getGrade(0)=F, getGrade(100)=A ✅
+- Cumulative correctly excludes missing T2 CS for GBELEKALE QUARDRI (avg of T1+T3 only) ✅
+- Subject champions update correctly with capped scores ✅
+- Broadsheet ranking, best student, and top-3 all render correctly ✅
+- ⚠️ overflow flag confirmed via `_capScoreEntry().hasOverflow` for edges 4 & 6 ✅
+
+**Status: v2 stress tests PASSED. Ready to port to production v1 when approved.**
