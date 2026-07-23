@@ -234,7 +234,7 @@ function toggleEye(inputId, btn) {
         <div id="bulk-feedback" style="font-size:0.78rem;margin-top:0.5rem;color:var(--money);"></div>
         <div style="border-top:1px solid var(--border);margin-top:0.75rem;padding-top:0.75rem;">
           <p style="font-size:0.78rem;color:var(--sub);margin-bottom:0.5rem;">Or scan a photo of your physical handwritten fee register — Groq AI reads it and imports all payments automatically.</p>
-          <input type="file" id="fee-register-input" accept="image/*" capture="environment" style="display:none;" onchange="handleFeeRegisterPhoto(event)">
+          <input type="file" id="fee-register-input" accept="image/*" style="display:none;" onchange="handleFeeRegisterPhoto(event)">
           <button class="btn-brand" style="background:linear-gradient(135deg,#0891b2,#0e7490);width:100%;" onclick="document.getElementById('fee-register-input').click()">📸 Scan Physical Fee Register</button>
           <div id="fee-scan-fb" style="font-size:0.78rem;margin-top:0.5rem;color:var(--money);display:none;"></div>
         </div>
@@ -266,7 +266,7 @@ function toggleEye(inputId, btn) {
         <button class="btn-ghost btn-sm" style="color:var(--text);" onclick="$('csv-up').click()">📁 Import (CSV / Photo)</button>
         <button class="btn-ghost btn-sm" style="color:var(--danger);" onclick="fixGarbledNames()">🔧 Fix & Clean</button>
         <button class="btn-ghost btn-sm" style="color:var(--danger);border-color:var(--danger);" onclick="clearAllStudents()">🗑️ Clear All</button>
-        <input type="file" id="csv-up" accept="image/*,application/pdf,.csv,.txt,.doc,.docx,.xls,.xlsx,.webp,.heic,.heif" multiple capture="environment" style="display:none;" onchange="handleCSV(event)">
+        <input type="file" id="csv-up" accept="image/*,application/pdf,.csv,.txt,.doc,.docx,.xls,.xlsx,.webp,.heic,.heif" multiple style="display:none;" onchange="handleCSV(event)">
       </div>
       <div id="csv-fb" style="font-size:0.75rem;color:var(--money);margin-bottom:0.4rem;"></div>
       <div id="students-list"></div>
@@ -918,7 +918,7 @@ function toggleEye(inputId, btn) {
           <button class="btn-ghost btn-sm" onclick="loadPresetSubjects('sss')" style="font-size:0.72rem;">📚 SSS</button>
         </div>
         <div id="subj-premium-scan" style="display:block;">
-          <input type="file" accept="image/*" capture="environment" id="subj-scan-input" style="display:none" onchange="scanSubjectList(event)">
+          <input type="file" accept="image/*" id="subj-scan-input" style="display:none" onchange="scanSubjectList(event)">
           <button class="btn-brand" style="width:100%;margin-bottom:0.5rem;background:linear-gradient(135deg,#7c3aed,#2563eb);" onclick="document.getElementById('subj-scan-input').click()">📷 Scan Curriculum/Subject List</button>
           <div id="subj-scan-fb" style="display:none;font-size:0.78rem;color:var(--sub);margin-bottom:0.5rem;text-align:center;"></div>
         </div>
@@ -1088,7 +1088,7 @@ function toggleEye(inputId, btn) {
   <div class="mbox">
     <div class="mhead"><h3 style="font-size:0.95rem;font-weight:800;">➕ Add Student</h3><button class="mclose" onclick="closeM('add-student-modal')">×</button></div>
     <div id="ns-premium-scan" style="display:block;">
-      <input type="file" accept="image/*" capture="environment" id="ns-scan-input" style="display:none" onchange="scanStudentForm(event)">
+      <input type="file" accept="image/*" id="ns-scan-input" style="display:none" onchange="scanStudentForm(event)">
       <button class="btn-brand" style="width:100%;margin-bottom:0.5rem;background:linear-gradient(135deg,#7c3aed,#2563eb);" onclick="document.getElementById('ns-scan-input').click()">📷 Scan Admission Form/ID</button>
       <div id="ns-scan-fb" style="display:none;font-size:0.78rem;color:var(--sub);margin-bottom:0.5rem;text-align:center;"></div>
     </div>
@@ -1105,7 +1105,7 @@ function toggleEye(inputId, btn) {
   <div class="mbox">
     <div class="mhead"><h3 style="font-size:0.95rem;font-weight:800;">👤 Add Staff</h3><button class="mclose" onclick="closeM('add-staff-modal')">×</button></div>
     <div id="sf-premium-scan" style="display:block;">
-      <input type="file" accept="image/*" capture="environment" id="sf-scan-input" style="display:none" onchange="scanStaffID(event)">
+      <input type="file" accept="image/*" id="sf-scan-input" style="display:none" onchange="scanStaffID(event)">
       <button class="btn-brand" style="width:100%;margin-bottom:0.5rem;background:linear-gradient(135deg,#7c3aed,#2563eb);" onclick="document.getElementById('sf-scan-input').click()">📷 Scan Staff ID/CV</button>
       <div id="sf-scan-fb" style="display:none;font-size:0.78rem;color:var(--sub);margin-bottom:0.5rem;text-align:center;"></div>
     </div>
@@ -1127,7 +1127,7 @@ function toggleEye(inputId, btn) {
   <div class="mbox">
     <div class="mhead"><h3 style="font-size:0.95rem;font-weight:800;">📉 Log Expense</h3><button class="mclose" onclick="closeM('add-expense-modal')">×</button></div>
     <div id="exp-premium-scan" style="display:block;">
-      <input type="file" accept="image/*" capture="environment" id="exp-scan-input" style="display:none" onchange="scanExpenseReceipt(event)">
+      <input type="file" accept="image/*" id="exp-scan-input" style="display:none" onchange="scanExpenseReceipt(event)">
       <button class="btn-brand" style="width:100%;margin-bottom:0.5rem;background:linear-gradient(135deg,#7c3aed,#2563eb);" onclick="document.getElementById('exp-scan-input').click()">📷 Scan Receipt</button>
       <div id="exp-scan-fb" style="display:none;font-size:0.78rem;color:var(--sub);margin-bottom:0.5rem;text-align:center;"></div>
     </div>
@@ -1368,7 +1368,7 @@ function toggleEye(inputId, btn) {
 
     <!-- Step 2: Photo button — accepts ALL file types like the Agent app -->
     <input type="file" id="socr-img-input" accept="image/*,application/pdf,.csv,.txt,.doc,.docx,.xls,.xlsx,.webp,.heic,.heif,*/*"
-      style="display:none;" onchange="socrHandleImage(event)" multiple capture="environment">
+      style="display:none;" onchange="socrHandleImage(event)" multiple>
     <button class="btn-brand" onclick="socrPickPhoto()" style="margin-bottom:0.5rem;">
       📷 Take Photo / Choose File
     </button>

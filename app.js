@@ -1793,7 +1793,7 @@ function editStudent(idx) {
           <button class="btn-brand btn-sm" style="font-size:0.72rem;" onclick="$('edit-photo-input').click()">📷 Take/Upload Photo</button>
           ${s.photo ? `<button class="btn-ghost btn-sm" style="font-size:0.72rem;margin-left:0.3rem;color:var(--danger);" onclick="removeStudentPhoto(${idx})">🗑️ Remove</button>` : ''}
         </div>
-        <input type="file" id="edit-photo-input" accept="image/*" capture="environment" style="display:none;" onchange="handleEditPhoto(${idx},event)">
+        <input type="file" id="edit-photo-input" accept="image/*" style="display:none;" onchange="handleEditPhoto(${idx},event)">
       </div>
 
       <label>Full Name</label>
@@ -2239,7 +2239,7 @@ function buildProfile(s, idx) {
         </div>
       </div>
 
-      <input type="file" id="student-photo-input" accept="image/*" capture="environment" style="display:none;" onchange="handleStudentPhoto(${idx},event)">
+      <input type="file" id="student-photo-input" accept="image/*" style="display:none;" onchange="handleStudentPhoto(${idx},event)">
 
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.4rem;">
         <div style="background:var(--s2);padding:0.55rem;border-radius:8px;border:1px solid var(--border);">
@@ -2373,7 +2373,7 @@ function buildFees(s, idx) {
     <div style="text-align:right;font-size:0.7rem;color:var(--sub);margin-top:3px;">${pct}% paid</div></div>
     <div class="card"><div class="ct">Record Payment</div>
     
-    <input type="file" accept="image/*" capture="environment" id="pay-scan-input" style="display:none" onchange="scanPaymentReceipt(event,${idx})">
+    <input type="file" accept="image/*" id="pay-scan-input" style="display:none" onchange="scanPaymentReceipt(event,${idx})">
     <button class="btn-brand" style="width:100%;margin-bottom:0.5rem;background:linear-gradient(135deg,#7c3aed,#2563eb);" onclick="document.getElementById('pay-scan-input').click()">📷 Scan Receipt</button>
     <div id="pay-scan-fb" style="display:none;font-size:0.78rem;color:var(--sub);margin-bottom:0.5rem;text-align:center;"></div>
     
