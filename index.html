@@ -917,7 +917,7 @@ function toggleEye(inputId, btn) {
           <button class="btn-ghost btn-sm" onclick="loadPresetSubjects('jss')" style="font-size:0.72rem;">📚 JSS</button>
           <button class="btn-ghost btn-sm" onclick="loadPresetSubjects('sss')" style="font-size:0.72rem;">📚 SSS</button>
         </div>
-        <div id="subj-premium-scan" style="display:none;">
+        <div id="subj-premium-scan" style="display:block;">
           <input type="file" accept="image/*" capture="environment" id="subj-scan-input" style="display:none" onchange="scanSubjectList(event)">
           <button class="btn-brand" style="width:100%;margin-bottom:0.5rem;background:linear-gradient(135deg,#7c3aed,#2563eb);" onclick="document.getElementById('subj-scan-input').click()">📷 Scan Curriculum/Subject List</button>
           <div id="subj-scan-fb" style="display:none;font-size:0.78rem;color:var(--sub);margin-bottom:0.5rem;text-align:center;"></div>
@@ -1087,7 +1087,7 @@ function toggleEye(inputId, btn) {
 <div class="modal" id="add-student-modal">
   <div class="mbox">
     <div class="mhead"><h3 style="font-size:0.95rem;font-weight:800;">➕ Add Student</h3><button class="mclose" onclick="closeM('add-student-modal')">×</button></div>
-    <div id="ns-premium-scan" style="display:none;">
+    <div id="ns-premium-scan" style="display:block;">
       <input type="file" accept="image/*" capture="environment" id="ns-scan-input" style="display:none" onchange="scanStudentForm(event)">
       <button class="btn-brand" style="width:100%;margin-bottom:0.5rem;background:linear-gradient(135deg,#7c3aed,#2563eb);" onclick="document.getElementById('ns-scan-input').click()">📷 Scan Admission Form/ID</button>
       <div id="ns-scan-fb" style="display:none;font-size:0.78rem;color:var(--sub);margin-bottom:0.5rem;text-align:center;"></div>
@@ -1104,7 +1104,7 @@ function toggleEye(inputId, btn) {
 <div class="modal" id="add-staff-modal">
   <div class="mbox">
     <div class="mhead"><h3 style="font-size:0.95rem;font-weight:800;">👤 Add Staff</h3><button class="mclose" onclick="closeM('add-staff-modal')">×</button></div>
-    <div id="sf-premium-scan" style="display:none;">
+    <div id="sf-premium-scan" style="display:block;">
       <input type="file" accept="image/*" capture="environment" id="sf-scan-input" style="display:none" onchange="scanStaffID(event)">
       <button class="btn-brand" style="width:100%;margin-bottom:0.5rem;background:linear-gradient(135deg,#7c3aed,#2563eb);" onclick="document.getElementById('sf-scan-input').click()">📷 Scan Staff ID/CV</button>
       <div id="sf-scan-fb" style="display:none;font-size:0.78rem;color:var(--sub);margin-bottom:0.5rem;text-align:center;"></div>
@@ -1126,7 +1126,7 @@ function toggleEye(inputId, btn) {
 <div class="modal" id="add-expense-modal">
   <div class="mbox">
     <div class="mhead"><h3 style="font-size:0.95rem;font-weight:800;">📉 Log Expense</h3><button class="mclose" onclick="closeM('add-expense-modal')">×</button></div>
-    <div id="exp-premium-scan" style="display:none;">
+    <div id="exp-premium-scan" style="display:block;">
       <input type="file" accept="image/*" capture="environment" id="exp-scan-input" style="display:none" onchange="scanExpenseReceipt(event)">
       <button class="btn-brand" style="width:100%;margin-bottom:0.5rem;background:linear-gradient(135deg,#7c3aed,#2563eb);" onclick="document.getElementById('exp-scan-input').click()">📷 Scan Receipt</button>
       <div id="exp-scan-fb" style="display:none;font-size:0.78rem;color:var(--sub);margin-bottom:0.5rem;text-align:center;"></div>

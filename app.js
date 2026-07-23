@@ -922,10 +922,9 @@ const openM = id => {
   const el = $(id); if (el) el.classList.add('on');
   const prefix = _PREMIUM_SCAN_MODALS[id];
   if (prefix) {
-    const prem = _isPremium();
     const scanBox = $(prefix + '-premium-scan'), nudgeBox = $(prefix + '-premium-nudge');
-    if (scanBox) scanBox.style.display = prem ? 'block' : 'none';
-    if (nudgeBox) nudgeBox.style.display = prem ? 'none' : 'block';
+    if (scanBox) scanBox.style.display = 'block';
+    if (nudgeBox) nudgeBox.style.display = 'none';
   }
 };
 const closeM = id => { const el = $(id); if (el) el.classList.remove('on'); };
@@ -2373,13 +2372,11 @@ function buildFees(s, idx) {
     </div><div class="prog-bg"><div class="prog-fill" style="width:${pct}%;"></div></div>
     <div style="text-align:right;font-size:0.7rem;color:var(--sub);margin-top:3px;">${pct}% paid</div></div>
     <div class="card"><div class="ct">Record Payment</div>
-    ${_isPremium() ? `
+    
     <input type="file" accept="image/*" capture="environment" id="pay-scan-input" style="display:none" onchange="scanPaymentReceipt(event,${idx})">
     <button class="btn-brand" style="width:100%;margin-bottom:0.5rem;background:linear-gradient(135deg,#7c3aed,#2563eb);" onclick="document.getElementById('pay-scan-input').click()">📷 Scan Receipt</button>
     <div id="pay-scan-fb" style="display:none;font-size:0.78rem;color:var(--sub);margin-bottom:0.5rem;text-align:center;"></div>
-    ` : `
-    <div style="background:linear-gradient(135deg,#7c3aed,#2563eb);border-radius:10px;padding:0.6rem;text-align:center;font-size:0.76rem;margin-bottom:0.6rem;">⭐ Upgrade to Premium to scan payment receipts instead of typing</div>
-    `}
+    
     <label>Amount (₦)</label><input type="number" id="pay-amt" placeholder="e.g. 25000">
     <label>Method</label><select id="pay-method"><option>Bank Transfer</option><option>Cash</option><option>POS</option><option>Online</option></select>
     <label>Date</label><input type="date" id="pay-date" value="${new Date().toISOString().split('T')[0]}">
@@ -5267,8 +5264,8 @@ function loadSettings() {
   updateLogoBadges(cfg.logo);
   renderSubjectChips();
   const subjScanBox=$('subj-premium-scan'), subjNudgeBox=$('subj-premium-nudge');
-  if (subjScanBox) subjScanBox.style.display = isPrem ? 'block' : 'none';
-  if (subjNudgeBox) subjNudgeBox.style.display = isPrem ? 'none' : 'block';
+  if (subjScanBox) subjScanBox.style.display = 'block';
+  if (subjNudgeBox) subjNudgeBox.style.display = 'none';
   loadGeminiKeySetting();
   loadBankDetails();
 }
@@ -5683,7 +5680,7 @@ READING DISCIPLINE:
 - If a field is illegible or not visible, output "UNCLEAR" for that field rather than guessing a plausible value.
 - Return ONLY valid JSON, no markdown, no explanation.`;
 
-function _isPremium() { return !!(SD.config && SD.config.plan === 'premium'); }
+function _isPremium() { return true; } // SANDBOX: premium gate bypassed for OCR testing
 
 // Parses common Nigerian D/M/YY or D/M/YYYY date text into YYYY-MM-DD
 function _parseNigerianDate(raw) {

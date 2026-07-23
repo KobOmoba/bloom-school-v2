@@ -129,3 +129,19 @@ to keep this sandbox isolated from real school data.
 *Maintained by Claude (Anthropic). Last major update: 2026-07-19 — full
 production copy + premium OCR entry points.*
 
+---
+
+## 🔒 OCR Gate Bypass (Testing)
+
+**Date:** 2026-07-23
+
+Premium gate removed for sandbox testing. All 5 OCR scan buttons (Add Student, Add Staff, Log Expense, Record Payment, Subjects scan) are now visible and functional regardless of plan tier.
+
+Changes made:
+- `app.js`: `_isPremium()` always returns `true`
+- `app.js`: `openM()` always shows scan box, hides nudge
+- `app.js`: `loadSettings()` always shows subject scan box
+- `app.js`: `buildProfile()` payment scan button always rendered
+- `index.html`: `ns/sf/exp/subj-premium-scan` divs set to `display:block`
+
+Restore all gates before porting to production `School-Bloom`.
