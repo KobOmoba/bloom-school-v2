@@ -5742,14 +5742,19 @@ async function scanPaymentReceipt(event, idx) {
     const resized = await _resizeFeeImage(file, 1000);
     const key = await _getFeeGroqKey();
     if (!key) { show('❌ Groq key not found — ask Bayo to add it in portal settings.'); return; }
-    const prompt = `You are reading a photograph of a Nigerian bank payment teller, POS slip, or transfer receipt for a school fee payment.
-Extract:
-  amount = the amount paid (integer, Naira)
-  date   = the date on the slip if visible (raw text as written)
-  method = your best guess, ONE of exactly: Bank Transfer, Cash, POS, Online — based on what kind of document this looks like
+    const prompt = `You are reading a photograph of a Nigerian bank payment teller, POS slip, transfer receipt, or cash receipt for a school fee payment.
+Extract ALL of the following:
+  amount    = the amount paid (integer, Naira). Look for "AMOUNT", "N", "₦", or the largest numeric value. Common formats: 25,000 / 25000 / 25.000 all mean 25000.
+  date      = the date on the slip if visible (raw text as written, e.g. "12/5/26", "8th June 2026")
+  method    = your best guess, ONE of exactly: Bank Transfer, Cash, POS, Online — based on what kind of document this looks like
+  payer     = the name of the person who made the payment, if visible (text). Look near "FROM", "DEPOSITOR", "REMITTER", "CUSTOMER", "PAID BY".
+  recipient = the school or account name receiving the payment, if visible (text). Look near "TO", "BENEFICIARY", "ACCOUNT NAME".
+  reference = the transaction reference, teller number, or session ID, if visible (text). Look near "REF", "TELLER NO", "SESSION ID", "RRR", "TRANS ID".
+  account_no = the destination account number if visible (10-digit NUBAN, digits only)
+
 ${_OCR_DISCIPLINE}
-Output ONLY: {"amount":0,"date":"","method":""}`;
-    const result = await _callGroqGenericVision(key, resized.base64, resized.mimeType, prompt, 400);
+Output ONLY: {"amount":0,"date":"","method":"","payer":"","recipient":"","reference":"","account_no":""}`;
+    const result = await _callGroqGenericVision(key, resized.base64, resized.mimeType, prompt, 500);
     if (fb) fb.style.display = 'none';
     if ($('pay-amt') && result.amount && result.amount !== 'UNCLEAR') $('pay-amt').value = result.amount;
     if ($('pay-date') && result.date && result.date !== 'UNCLEAR') {
@@ -5761,8 +5766,12 @@ Output ONLY: {"amount":0,"date":"","method":""}`;
       const opt = [...methodSel.options].find(o => o.value === result.method);
       if (opt) methodSel.value = result.method;
     }
-    show('✅ Filled from receipt — please verify before saving.');
-    setTimeout(() => { if (fb) fb.style.display = 'none'; }, 4000);
+    const extra = [];
+    if (result.payer && result.payer !== 'UNCLEAR') extra.push('Payer: ' + result.payer);
+    if (result.reference && result.reference !== 'UNCLEAR') extra.push('Ref: ' + result.reference);
+    const msg = extra.length ? '✅ Filled from receipt — ' + extra.join(' · ') + '. Please verify before saving.' : '✅ Filled from receipt — please verify before saving.';
+    show(msg);
+    setTimeout(() => { if (fb) fb.style.display = 'none'; }, 6000);
   } catch(e) {
     show('❌ ' + (e.message || 'Could not read receipt. Try a clearer photo.'));
   }
@@ -5822,17 +5831,31 @@ async function scanStaffID(event) {
     const key = await _getFeeGroqKey();
     if (!key) { show('❌ Groq key not found — ask Bayo to add it in portal settings.'); return; }
     const prompt = `You are reading a photograph of a staff ID card or CV/resume for a Nigerian school employee.
-Extract:
-  name  = the staff member's full name (text)
+Extract ALL of the following:
+  name  = the staff member's full name (text). Look near "NAME", "FULL NAME", "STAFF NAME". Nigerian names: Yoruba (Adeoye, Ogunsola, Olatunde), Hausa (Musa, Abdullahi), Igbo (Emeka, Chioma).
   email = an email address if visible (text)
+  role  = the job title or position, if stated (text). Look near "POSITION", "ROLE", "DESIGNATION", "TITLE". Common Nigerian school roles: Teacher, Bursar, Head Teacher, Vice Principal, Admin, Sports Coach, Arts Teacher, Music Teacher.
+  phone = a phone number if visible (digits only). Look near "PHONE", "TEL", "MOBILE", "CONTACT".
+
 ${_OCR_DISCIPLINE}
-Output ONLY: {"name":"","email":""}`;
-    const result = await _callGroqGenericVision(key, resized.base64, resized.mimeType, prompt, 300);
+Output ONLY: {"name":"","email":"","role":"","phone":""}`;
+    const result = await _callGroqGenericVision(key, resized.base64, resized.mimeType, prompt, 400);
     if (fb) fb.style.display = 'none';
     if ($('sf-name') && result.name && result.name !== 'UNCLEAR') $('sf-name').value = result.name;
     if ($('sf-email') && result.email && result.email !== 'UNCLEAR') $('sf-email').value = result.email;
-    show('✅ Filled from ID — please verify name/email and set a password before saving.');
-    setTimeout(() => { if (fb) fb.style.display = 'none'; }, 5000);
+    const roleSel = $('sf-role');
+    if (roleSel && result.role && result.role !== 'UNCLEAR') {
+      const opt = [...roleSel.options].find(o => o.value.toLowerCase() === String(result.role).toLowerCase()
+        || o.value.toLowerCase().includes(String(result.role).toLowerCase())
+        || String(result.role).toLowerCase().includes(o.value.toLowerCase()));
+      if (opt) roleSel.value = opt.value;
+    }
+    const extra6 = [];
+    if (result.phone && result.phone !== 'UNCLEAR') extra6.push('Phone: ' + result.phone);
+    if (result.role && result.role !== 'UNCLEAR' && !roleSel?.value?.toLowerCase().includes(String(result.role).toLowerCase())) extra6.push('Role: ' + result.role);
+    const msg6 = extra6.length ? '✅ Filled from ID — ' + extra6.join(' · ') + '. Set a password before saving.' : '✅ Filled from ID — please verify name/email and set a password before saving.';
+    show(msg6);
+    setTimeout(() => { if (fb) fb.style.display = 'none'; }, 6000);
   } catch(e) {
     show('❌ ' + (e.message || 'Could not read ID. Try a clearer photo.'));
   }
