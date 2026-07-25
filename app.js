@@ -827,8 +827,13 @@ const openM = id => {
   const prefix = _PREMIUM_SCAN_MODALS[id];
   if (prefix) {
     const scanBox = $(prefix + '-premium-scan'), nudgeBox = $(prefix + '-premium-nudge');
-    if (scanBox) scanBox.style.display = 'block'; // always show scan button (locked by _gateScan)
-    if (nudgeBox) nudgeBox.style.display = 'none'; // hide nudge until clicked
+    if (_isPremium()) {
+      if (scanBox) scanBox.style.display = 'block';
+      if (nudgeBox) nudgeBox.style.display = 'none';
+    } else {
+      if (scanBox) scanBox.style.display = 'none';
+      if (nudgeBox) nudgeBox.style.display = 'block';
+    }
   }
 };
 const closeM = id => { const el = $(id); if (el) el.classList.remove('on'); };
@@ -5174,8 +5179,13 @@ function loadSettings() {
   updateLogoBadges(cfg.logo);
   renderSubjectChips();
   const subjScanBox=$('subj-premium-scan'), subjNudgeBox=$('subj-premium-nudge');
-  if (subjScanBox) subjScanBox.style.display = 'block';
-  if (subjNudgeBox) subjNudgeBox.style.display = 'none';
+  if (_isPremium()) {
+    if (subjScanBox) subjScanBox.style.display = 'block';
+    if (subjNudgeBox) subjNudgeBox.style.display = 'none';
+  } else {
+    if (subjScanBox) subjScanBox.style.display = 'none';
+    if (subjNudgeBox) subjNudgeBox.style.display = 'block';
+  }
   loadGeminiKeySetting();
   loadBankDetails();
 }
