@@ -729,8 +729,12 @@ const SQ = {
           clearTimeout(timeoutId);
           this._probing = false;
           if (!this._offlineSince) this._offlineSince = Date.now();
-          const secs = (Date.now() - this._offlineSince) / 1000;
-          if (el && secs > 5) { el.className = 'sdot sd-off'; el.textContent = '● Offline'; }
+          // Use a persistent offline timestamp — UI updates after 5s
+          setTimeout(() => {
+            if (this._offlineSince && !navigator.onLine && el) {
+              el.className = 'sdot sd-off'; el.textContent = '● Offline';
+            }
+          }, 5000);
         });
       }
     }
@@ -6244,22 +6248,24 @@ In 2 short sentences (max 30 words each), give the principal ONE urgent action a
     const attData = SD.attendance || {};
 
     // Find students with 3+ consecutive absences
+    // SD.attendance structure: { date: { studentName: 'Present'|'Absent'|'Late' } }
     const absentStreaks = [];
+    const allDates = Object.keys(attData).sort().slice(-7); // last 7 recorded dates
     students.forEach(s => {
-      const records = attData[s.name] || {};
-      const dates = Object.keys(records).sort().slice(-7); // last 7 days
       let streak = 0;
-      for (let i = dates.length - 1; i >= 0; i--) {
-        if (records[dates[i]] === 'A') streak++;
+      for (let i = allDates.length - 1; i >= 0; i--) {
+        const status = attData[allDates[i]]?.[s.name];
+        if (status === 'Absent' || status === 'A') streak++;
         else break;
       }
       if (streak >= 3) absentStreaks.push({ name: s.name, class: s.class, streak });
     });
 
     // Students with no scores at all this term
-    const term = SD.scores?.currentTerm || 'First Term';
+    // SD.scores structure: { 'Term 1': { studentId: { subject: {ca1,ca2,ca3,exam} } } }
+    const term = SD.config?.currentTerm || 'Term 1';
     const noScores = students.filter(s => {
-      const termScores = SD.scores?.[term]?.[s.name];
+      const termScores = (SD.scores?.[term]||{})[s.id];
       return !termScores || Object.keys(termScores).length === 0;
     });
 
@@ -6474,6 +6480,10 @@ Use a respectful, professional tone suitable for a Nigerian school principal.`, 
       } catch(e) {
         console.warn("Remark failed for " + s.name + ":", e.message);
         done++;
+        // Backoff on rate limit (429) to avoid storm of failing requests
+        if (e.message && (e.message.includes('429') || e.message.includes('rate'))) {
+          await new Promise(function(r){ setTimeout(r, 5000); });
+        }
       }
     }
 
