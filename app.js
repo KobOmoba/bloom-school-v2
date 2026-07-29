@@ -1057,9 +1057,10 @@ async function loadAllStudentsV2(schoolId) {
 async function saveStudentProfileV2(schoolId, student) {
   const profile = {
     name: student.name || '', phone: student.phone || '', class: student.class || '',
+    promotion: student.promotion || null,
     updatedAt: new Date().toISOString()
   };
-  const docId = student.id || _studentsColV2(schoolId).doc().id;
+  const docId = student._v2Id || _studentsColV2(schoolId).doc().id;
   await _studentsColV2(schoolId).doc(docId).set(profile, { merge: true });
   return docId;
 }
@@ -2417,6 +2418,7 @@ function renderTab(tab) {
   else if (tab === 'report') c.innerHTML = buildReport(s);
   else if (tab === 'swot') c.innerHTML = buildSWOT(s, activeIdx);
   else if (tab === 'safety') c.innerHTML = buildSafety(s, activeIdx);
+  else if (tab === 'promotion') c.innerHTML = buildPromotion(s, activeIdx);
 }
 
 // ── PROFILE TAB ───────────────────────────────────────────────────────
@@ -2767,7 +2769,64 @@ function buildReport(s) {
   return `<div class="card"><div class="ct">📋 Print Actions</div>
     <button class="btn-brand" style="width:100%;" onclick="printReportCard(activeIdx, '${term}')">🖨️ Open Printed Report Card</button>
     <p style="font-size:0.76rem;color:var(--sub);margin-top:0.5rem;">Generates a full report card for ${esc(term)} including scores, position, and behavioural ratings.</p>
+    <button class="btn-brand" style="width:100%;margin-top:0.6rem;background:linear-gradient(135deg,#7c3aed,#2563eb);" onclick="printPromotionReportCard(activeIdx)">🎓 Open Annual Promotion Report</button>
+    <p style="font-size:0.76rem;color:var(--sub);margin-top:0.5rem;">Summarizes all 3 terms into one final card with cumulative average, position, and the promotion decision.</p>
     </div>`;
+}
+
+// ── PROMOTION TAB ──────────────────────────────────────────────────────
+// Decision belongs to the Class Teacher of this student's specific class —
+// the Principal can always see it, but doesn't enter it themselves.
+function _canDecidePromotion(s) {
+  if (userRole === 'Principal') return true; // sees everything, can override if needed
+  return userRole === 'Class Teacher' && getAssignedClass() === s.class;
+}
+function buildPromotion(s, idx) {
+  const promo = s.promotion || {};
+  const canDecide = _canDecidePromotion(s);
+  const readOnlyNote = canDecide ? '' :
+    `<div style="background:var(--s2);border-radius:8px;padding:0.6rem;font-size:0.76rem;color:var(--sub);margin-bottom:0.7rem;">
+      🔒 Only ${esc(s.class)}'s Class Teacher can set this decision. You can view it here.
+    </div>`;
+  return `<div class="card">
+    <div class="ct">🎓 End-of-Year Promotion Decision</div>
+    ${readOnlyNote}
+    <label style="font-size:0.8rem;font-weight:600;">Academic Year</label>
+    <input type="text" id="promo-year" value="${esc(promo.year || SD.config.session || '')}" placeholder="e.g. 2025/2026" ${canDecide?'':'disabled'}>
+    <label style="font-size:0.8rem;font-weight:600;margin-top:0.5rem;display:block;">Decision</label>
+    <select id="promo-decision" ${canDecide?'':'disabled'}>
+      <option value="" ${!promo.decision?'selected':''}>— Not yet decided —</option>
+      <option value="Promoted" ${promo.decision==='Promoted'?'selected':''}>Promoted</option>
+      <option value="Promoted on Trial" ${promo.decision==='Promoted on Trial'?'selected':''}>Promoted on Trial</option>
+      <option value="Repeat" ${promo.decision==='Repeat'?'selected':''}>Repeat Class</option>
+    </select>
+    <label style="font-size:0.8rem;font-weight:600;margin-top:0.5rem;display:block;">Next Class (if promoted)</label>
+    <input type="text" id="promo-nextclass" value="${esc(promo.nextClass || '')}" placeholder="e.g. JSS 2B" ${canDecide?'':'disabled'}>
+    <label style="font-size:0.8rem;font-weight:600;margin-top:0.5rem;display:block;">Class Teacher's Comment</label>
+    <textarea id="promo-comment" rows="3" placeholder="Brief note for the promotion report card" ${canDecide?'':'disabled'}>${esc(promo.comment || '')}</textarea>
+    ${promo.decidedBy ? `<p style="font-size:0.72rem;color:var(--sub);margin-top:0.4rem;">Last set by ${esc(promo.decidedBy)} on ${promo.decidedAt ? new Date(promo.decidedAt).toLocaleDateString() : '—'}</p>` : ''}
+    ${canDecide ? `<button class="btn-brand" style="width:100%;margin-top:0.6rem;" onclick="savePromotionDecision(${idx})">💾 Save Decision</button>` : ''}
+  </div>`;
+}
+async function savePromotionDecision(idx) {
+  const s = SD.students[idx]; if (!s) return;
+  if (!_canDecidePromotion(s)) return alert("Only this class's Class Teacher (or the Principal) can set this.");
+  const decision = $('promo-decision')?.value || '';
+  if (!decision) return alert('Select a decision first.');
+  s.promotion = {
+    year: $('promo-year')?.value.trim() || SD.config.session || '',
+    decision,
+    nextClass: $('promo-nextclass')?.value.trim() || '',
+    comment: $('promo-comment')?.value.trim() || '',
+    decidedBy: currentStaff?.name || userRole,
+    decidedAt: new Date().toISOString()
+  };
+  await SQ.push('students', SD.students);
+  if (schoolId && s._v2Id && !SD.config?._demo) {
+    saveStudentProfileV2(schoolId, s).catch(e => console.warn('V2 dual-write (promotion) failed:', e.message));
+  }
+  toast('✅ Promotion decision saved');
+  renderTab('promotion');
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -3103,6 +3162,24 @@ function scorecardSwitchClass(cls) { const el=$('scorecard-content'); if(!el)ret
 function scorecardSwitchView(view) { const el=$('scorecard-content'); if(!el)return; el.dataset.view=view; renderScorecard(); }
 
 // ── Print Report Card (single) ───────────────────────────────────────
+// ── Report card visual theme — "classic" (default, unchanged look) or "bold" ──
+function _reportCardThemeCSS() {
+  const theme = SD.config?.reportCardTheme || 'classic';
+  if (theme !== 'bold') return ''; // classic = no override, exactly the original look
+  return `
+    body{background:#fff;}
+    .hdr{background:#1e2a5e;color:#fbbf24;border-bottom:none;border-radius:10px;padding:16px 10px;margin-bottom:14px;}
+    .hdr h1{color:#fbbf24;font-weight:900;}
+    .hdr h2{color:#fde68a;}
+    .hdr .motto{color:#c7d2fe;}
+    .sb{background:#1e2a5e;border-color:#1e2a5e;}
+    .sv{color:#fbbf24;}
+    th{background:#1e2a5e;color:#fbbf24;}
+    .st{background:#fbbf24;color:#1e2a5e;}
+    .sig-box{border-top-color:#1e2a5e;}
+  `;
+}
+
 function printReportCard(idx, term) {
   const s = SD.students[idx]; if (!s) return;
   const sid = s.id || idx;
@@ -3192,6 +3269,7 @@ function printReportCard(idx, term) {
     .watermark{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-35deg);
       font-size:80px;color:rgba(0,0,0,0.04);font-weight:900;pointer-events:none;z-index:0;white-space:nowrap;}
     @media print{button{display:none;}.watermark{position:fixed;}}
+    ${_reportCardThemeCSS()}
   </style></head><body>
   <div class="watermark">${esc(cfg.schoolName||'EduBloom')}</div>
 
@@ -3296,6 +3374,129 @@ function printReportCard(idx, term) {
     <div>📅 <b>Next Term Begins:</b> ${esc(nextTermDate)}</div>
     <div>🏫 <b>${esc(cfg.schoolName||'')}</b> — Powered by EduBloom 🌸</div>
   </div>
+
+  <div style="text-align:center;margin-top:12px;">
+    <button onclick="window.print()" style="padding:8px 22px;font-size:13px;cursor:pointer;background:#1d4ed8;color:#fff;border:none;border-radius:6px;font-weight:700;">🖨️ Print / Save as PDF</button>
+  </div>
+  </body></html>`);
+  w.document.close();
+}
+
+// ── ANNUAL PROMOTION REPORT — summarizes all 3 terms into one final card ──
+function printPromotionReportCard(idx) {
+  const s = SD.students[idx]; if (!s) return;
+  const sid = s.id || idx;
+  const subs = SD.config.subjects || ['English Language','Mathematics','Basic Science & Technology',
+    'Social Studies','Civic Education','Cultural & Creative Arts','Computer Science',
+    'Physical & Health Education','Agricultural Science','National Values Education',
+    'French Language','Home Economics','Business Studies','Religious Studies'];
+  const cfg = SD.config;
+  const promo = s.promotion || {};
+  const classStudents = SD.students.filter(st => st.class === s.class);
+
+  const { cumSub, avg: myAvg } = calcCumulative(sid, subs);
+  const ranked = classStudents.map(st => {
+    const stid = st.id || SD.students.indexOf(st);
+    const { avg } = calcCumulative(stid, subs);
+    return { name: st.name, avg };
+  }).sort((a,b) => b.avg - a.avg);
+  const myPos = (ranked.findIndex(r => r.name === s.name) + 1) || '–';
+
+  const termAvgs = ['Term 1','Term 2','Term 3'].map(term => {
+    const { avg } = calcStudentTermStats(sid, term, subs);
+    return { term, avg };
+  });
+
+  const rows = subs.map(sub => {
+    const cumAvg = cumSub[sub] || 0;
+    const perTerm = ['Term 1','Term 2','Term 3'].map(term => {
+      const td = (SD.scores[term]||{})[sid] || {};
+      if (!_hasScoreEntry(td, sub)) return '';
+      return _capScoreEntry(td[sub]).tot || '';
+    });
+    const { g } = getGrade(cumAvg);
+    return `<tr><td>${esc(sub)}</td><td>${perTerm[0]}</td><td>${perTerm[1]}</td><td>${perTerm[2]}</td>
+      <td style="font-weight:800;color:${cumAvg>=70?'green':cumAvg>=50?'#333':'red'};">${cumAvg||'–'}</td>
+      <td style="font-weight:700;">${cumAvg>0?g:'–'}</td></tr>`;
+  }).join('');
+
+  const daysPresent = Object.values(SD.attendance||{}).filter(day => day[s.name]==='Present').length;
+  const daysAbsent  = Object.values(SD.attendance||{}).filter(day => day[s.name]==='Absent').length;
+  const { g: overallGrade } = getGrade(myAvg);
+  const decisionColor = promo.decision === 'Repeat' ? '#dc2626' : promo.decision === 'Promoted on Trial' ? '#f59e0b' : '#16a34a';
+
+  const w = window.open('', '_blank', 'width=820,height=1150');
+  if (!w) return alert('Please allow popups to print.');
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Annual Promotion Report — ${esc(s.name)}</title>
+  <style>
+    *{box-sizing:border-box;}
+    body{font-family:Arial,sans-serif;margin:0;padding:20px;color:#111;font-size:11.5px;background:#fff;}
+    .hdr{text-align:center;border-bottom:3px double #333;padding-bottom:10px;margin-bottom:12px;}
+    .hdr h1{font-size:19px;margin:4px 0;letter-spacing:.5px;}
+    .hdr h2{font-size:13px;margin:2px 0;color:#555;font-weight:700;}
+    .ig{display:grid;grid-template-columns:1fr 1fr;gap:3px 12px;margin-bottom:10px;font-size:11px;}
+    .ig div{padding:2px 0;border-bottom:1px dotted #ddd;}
+    .sm{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin:8px 0;}
+    .sb{border:2px solid #e5e7eb;border-radius:6px;padding:5px;text-align:center;}
+    .sv{font-size:16px;font-weight:900;color:#1d4ed8;}
+    table{width:100%;border-collapse:collapse;margin-bottom:8px;font-size:11px;}
+    th,td{border:1px solid #bbb;padding:3px 5px;text-align:center;}
+    td:first-child, th:first-child{text-align:left;}
+    th{background:#f3f4f6;font-size:10.5px;font-weight:700;}
+    .st{font-weight:800;font-size:11.5px;background:#1e3a5f;color:#fff;padding:4px 7px;margin:8px 0 3px;border-radius:3px;}
+    .decision-box{border:3px solid ${decisionColor};border-radius:8px;padding:12px;text-align:center;margin:12px 0;background:${decisionColor}10;}
+    .decision-box .label{font-size:11px;color:#555;font-weight:700;}
+    .decision-box .value{font-size:20px;font-weight:900;color:${decisionColor};margin:4px 0;}
+    .rg{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;}
+    .rb{border:1.5px solid #bbb;border-radius:6px;padding:8px;min-height:50px;}
+    .rb-label{font-weight:800;font-size:11px;margin-bottom:6px;border-bottom:1px solid #eee;padding-bottom:3px;}
+    .sig-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:14px;font-size:10.5px;}
+    .sig-box{border-top:1.5px solid #333;padding-top:4px;text-align:center;}
+    @media print{button{display:none;}}
+    ${_reportCardThemeCSS()}
+  </style></head><body>
+
+  <div class="hdr">
+    ${cfg.logoUrl?`<img src="${cfg.logoUrl}" style="height:55px;margin-bottom:5px;">` : `<div style="font-size:28px;margin-bottom:3px;">🏫</div>`}
+    <h1>${esc(cfg.schoolName||'School')}</h1>
+    <h2>ANNUAL PROMOTION REPORT — ${esc(promo.year || cfg.session || '')}</h2>
+  </div>
+
+  <div class="ig">
+    <div><b>Student:</b> ${esc(s.name)}</div><div><b>Class:</b> ${esc(s.class||'')}</div>
+    <div><b>Admission No:</b> ${esc(s.admissionNo||'–')}</div><div><b>Position in Class:</b> ${myPos} of ${classStudents.length}</div>
+    <div><b>Days Present (full year):</b> ${daysPresent}</div><div><b>Days Absent:</b> ${daysAbsent}</div>
+  </div>
+
+  <div class="sm">
+    <div class="sb"><div class="sv">${termAvgs[0].avg||'–'}</div>Term 1 Avg</div>
+    <div class="sb"><div class="sv">${termAvgs[1].avg||'–'}</div>Term 2 Avg</div>
+    <div class="sb"><div class="sv">${termAvgs[2].avg||'–'}</div>Term 3 Avg</div>
+    <div class="sb"><div class="sv">${myAvg||'–'}</div>Cumulative Avg</div>
+  </div>
+
+  <div class="st">CUMULATIVE ACADEMIC PERFORMANCE — ALL 3 TERMS</div>
+  <table><thead><tr><th>Subject</th><th>Term 1</th><th>Term 2</th><th>Term 3</th><th>Cumulative</th><th>Grade</th></tr></thead>
+  <tbody>${rows}</tbody></table>
+  <p style="font-size:10px;color:#777;">Overall Cumulative Average: <b>${myAvg}</b> · Overall Grade: <b>${overallGrade}</b></p>
+
+  <div class="decision-box">
+    <div class="label">END-OF-YEAR DECISION</div>
+    <div class="value">${esc(promo.decision || 'Not yet decided')}</div>
+    ${promo.nextClass ? `<div style="font-size:12px;color:#333;">Proceeding to: <b>${esc(promo.nextClass)}</b></div>` : ''}
+  </div>
+
+  <div class="rg">
+    <div class="rb"><div class="rb-label">Class Teacher's Comment</div>${esc(promo.comment || '____________________')}</div>
+    <div class="rb"><div class="rb-label">Principal's Comment</div>____________________</div>
+  </div>
+
+  <div class="sig-row">
+    <div class="sig-box">Class Teacher<br>Signature</div>
+    <div class="sig-box">Principal<br>Signature</div>
+    <div class="sig-box">Parent / Guardian<br>Signature & Date</div>
+  </div>
+  ${promo.decidedBy ? `<p style="font-size:9.5px;color:#999;margin-top:8px;">Decision recorded by ${esc(promo.decidedBy)} on ${promo.decidedAt ? new Date(promo.decidedAt).toLocaleDateString() : '—'}</p>` : ''}
 
   <div style="text-align:center;margin-top:12px;">
     <button onclick="window.print()" style="padding:8px 22px;font-size:13px;cursor:pointer;background:#1d4ed8;color:#fff;border:none;border-radius:6px;font-weight:700;">🖨️ Print / Save as PDF</button>
@@ -5438,6 +5639,7 @@ function loadSettings() {
   const sf = $('set-fee'); if(sf) sf.value = cfg.fee||50000;
   const st = $('set-term'); if(st) st.value = cfg.currentTerm||'Term 1';
   const ss = $('set-session'); if(ss) ss.value = cfg.session||'2025/2026';
+  const rt = $('s-report-theme'); if(rt) rt.value = cfg.reportCardTheme || 'classic';
   const isPrem = cfg.plan==='premium';
   const planEl=$('settings-plan'); if(planEl) planEl.textContent=isPrem?'PREMIUM ✨':'BASIC';
   const slEl=$('settings-staff-limit'); if(slEl) slEl.textContent=isPrem?'Unlimited':'3';
@@ -5606,6 +5808,7 @@ async function saveSettings() {
   SD.config.fee         = parseFloat($('set-fee')?.value)||50000;
   SD.config.currentTerm = $('set-term')?.value||'Term 1';
   SD.config.session     = $('set-session')?.value.trim()||'';
+  SD.config.reportCardTheme = $('s-report-theme')?.value || 'classic';
   const pwd = $('set-pwd')?.value.trim();
   if (pwd) {
     const pr = (SD.staff||[]).find(s=>s.role==='Principal');
