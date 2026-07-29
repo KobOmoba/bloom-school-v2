@@ -7,6 +7,114 @@ already used for `bloom-agent-v2` → `bloom-agent`.
 
 ---
 
+## 🔐 Per-Class / Per-Subject Data Isolation — Phase 1 + 2 built, Phase 3 (rules) drafted, not live
+
+**The requirement, confirmed with Bayo directly:** every student's data is
+private. A Class Teacher can see and edit only the students in their
+assigned class — nothing else, not even read-only. A Subject Teacher can
+touch only their assigned subject's scores, for any class — but nothing
+else about a student (no profile, no fees, no other subjects). Someone who
+is *both* a Class Teacher and a Subject Teacher gets the union of both:
+full access to their own class, plus their subject across every other
+class too. Fees are gated separately from everything else, Principal/Bursar
+only. None of this was achievable with the old data model — Firestore
+security rules can restrict a whole document, not a slice inside one, and
+the old model kept every student, every subject, every term in one flat
+array/object per school.
+
+### New data shape (Phase 1 + 2 — built, dual-write, live in this sandbox now)
+```
+schools/{schoolId}/students/{studentId}                          → profile only: name, phone, class
+schools/{schoolId}/students/{studentId}/private/fees               → totalFee, paid, paymentHistory
+schools/{schoolId}/students/{studentId}/scores/{term}_{subject}    → ca1, ca2, ca3, exam (doc id e.g. "Term1_Mathematics")
+schools/{schoolId}/staff_directory/{uid}                           → uid IS the real Firebase Auth UID. role, assignedClass, assignedSubjects
+```
+
+**Built as dual-write, not a replacement.** `addStudent`, `deleteStudent`,
+`recordPayment`, `saveScores`, and `addStaff` now also write into this new
+structure alongside the existing flat `SD.students`/`SD.scores`/`SD.staff`
+save path. Nothing existing was rewired to *read* from the new structure
+yet — the whole app still runs on the old in-memory model for rendering.
+This means: new activity from today onward populates the new structure
+correctly, but it's not yet the source of truth for anything, and a
+student added before this change has no `_v2Id` link until edited once.
+
+**Known gap, not fixed in this pass:** `deleteStudentV2` doesn't cascade —
+Firestore won't auto-delete a student's `private/fees` or `scores/*`
+sub-documents when the parent student doc is deleted. Orphaned sub-docs
+would accumulate. Needs a small cleanup pass (delete subcollection
+contents before deleting the parent) before this matters for real use.
+
+### Phase 3 — the actual security rules (drafted below, NOT yet published anywhere)
+```
+function isStaffOf(schoolId) {
+  return request.auth != null &&
+    exists(/databases/$(database)/documents/schools/$(schoolId)/staff_directory/$(request.auth.uid));
+}
+function myRole(schoolId) {
+  return get(/databases/$(database)/documents/schools/$(schoolId)/staff_directory/$(request.auth.uid)).data.role;
+}
+function myAssignedClass(schoolId) {
+  return get(/databases/$(database)/documents/schools/$(schoolId)/staff_directory/$(request.auth.uid)).data.assignedClass;
+}
+function myAssignedSubjects(schoolId) {
+  return get(/databases/$(database)/documents/schools/$(schoolId)/staff_directory/$(request.auth.uid)).data.assignedSubjects;
+}
+function isPrincipalOf(schoolId) { return isStaffOf(schoolId) && myRole(schoolId) == 'Principal'; }
+function isBursarOf(schoolId)    { return isStaffOf(schoolId) && myRole(schoolId) == 'Bursar'; }
+
+match /schools/{schoolId}/staff_directory/{uid} {
+  allow read: if isPrincipalOf(schoolId) || (isStaffOf(schoolId) && request.auth.uid == uid);
+  allow write: if isPrincipalOf(schoolId);
+}
+
+match /schools/{schoolId}/students/{studentId} {
+  allow read, write: if isPrincipalOf(schoolId)
+                    || (isStaffOf(schoolId) && myAssignedClass(schoolId) == resource.data.class);
+  allow create: if isPrincipalOf(schoolId)
+             || (isStaffOf(schoolId) && myAssignedClass(schoolId) == request.resource.data.class);
+}
+
+match /schools/{schoolId}/students/{studentId}/private/fees {
+  allow read, write: if isPrincipalOf(schoolId) || isBursarOf(schoolId);
+}
+
+match /schools/{schoolId}/students/{studentId}/scores/{scoreId} {
+  allow read, write: if isPrincipalOf(schoolId)
+    || (isStaffOf(schoolId) && myAssignedClass(schoolId) ==
+         get(/databases/$(database)/documents/schools/$(schoolId)/students/$(studentId)).data.class)
+    || (isStaffOf(schoolId) && resource.data.subject in myAssignedSubjects(schoolId));
+  allow create: if isPrincipalOf(schoolId)
+    || (isStaffOf(schoolId) && myAssignedClass(schoolId) ==
+         get(/databases/$(database)/documents/schools/$(schoolId)/students/$(studentId)).data.class)
+    || (isStaffOf(schoolId) && request.resource.data.subject in myAssignedSubjects(schoolId));
+}
+```
+A dual-role staff member (Class Teacher of JSS2A *and* Subject Teacher for
+Mathematics) passes the scores rule two independent ways — full access to
+every JSS2A student's every subject via the class-teacher clause, plus
+Mathematics-only access to every *other* class via the subject-teacher
+clause. A pure Subject Teacher with no `assignedClass` only ever matches
+the second clause. Not published anywhere yet — needs code fully wired to
+the new read path first (see "Not yet done" below), or publishing these
+rules would break the app immediately since it still reads the old
+structure.
+
+### Explicitly NOT done yet
+- App still **reads** from the old flat structure everywhere (rendering,
+  scorecards, report cards, bulk CSV/OCR import) — only writes go to both
+  places. A full read-path migration is the next real chunk of work.
+- Rules above are drafted, not published — publishing them now would lock
+  everyone out immediately, since nothing reads the new structure yet.
+- No migration script for existing schools' data (converting an existing
+  flat `SD.students`/`SD.scores` into the new per-document shape).
+- Login screen doesn't yet offer the real-auth path to staff — `addStaff`
+  creates the Firebase Auth account, but `doLogin`'s staff step still only
+  checks the legacy hashed-password field.
+- No production port — this is 100% sandbox-only, `School-Bloom` untouched.
+
+---
+
 ## 📌 What This App Is
 
 A full working copy of production `School-Bloom`, plus **OCR-powered entry
