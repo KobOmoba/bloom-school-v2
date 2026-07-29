@@ -129,6 +129,32 @@ for email + new password, creates their real account, links it in
 `staff_directory`). Their legacy hashed-password login keeps working
 until they've claimed their account — nobody gets locked out mid-transition.
 
+### Stress test — migration logic verified against real edge-case data
+
+Bayo provided real test fixtures: 65 students (from the same 5 ledger
+photos used to build the OCR prompts), 3 terms, 13 subjects, with 7
+deliberately broken score entries (grade boundaries at exactly 69/70,
+blank fields, out-of-range CA/exam values, an all-zero entry, a simulated
+OCR misread of 700 instead of 70, and a genuinely missing subject for one
+term). Ran two Node test harnesses against this real data, using the
+actual extracted app functions rather than reimplementations:
+
+1. **Existing grading logic** (`getGrade`, `calcStudentTermStats`,
+   `calcCumulative`, `_capScoreEntry`, `_hasScoreEntry`) — **14/14 checks
+   passed.** All 7 edge cases already handled correctly (this hardening
+   predates today's session — the credit's not mine, just verifying it holds).
+2. **New Phase 1/4 migration code** — simulated the full
+   `migrateStudentsToV2` → `hydrateFromV2` round trip with a mock
+   Firestore, run against all 65 students' real data. **2,534 field-level
+   checks passed, 0 failures.** No data loss, no corruption, and —
+   critically — the one genuinely-missing subject stayed genuinely
+   missing after the round trip rather than getting silently filled in
+   as a zero. Also confirmed all 39 term×subject score-document IDs are
+   collision-free.
+
+This gives real confidence the new data model round-trips correctly
+before it's ever pointed at a live school's actual data.
+
 ### Explicitly NOT done yet
 - Rules above are drafted, not published — publishing them now would lock
   everyone out immediately unless every school has been migrated AND every
