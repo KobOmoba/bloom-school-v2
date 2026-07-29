@@ -1124,6 +1124,130 @@ async function loadStaffDirectoryV2(schoolId) {
   return snap.docs.map(doc => ({ uid: doc.id, ...doc.data() }));
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// PHASE 4 — migration + read-path bridge
+//
+// Read-path strategy: rather than rewriting every render/scorecard/report-
+// card function to be async-Firestore-aware (a much bigger, riskier
+// rewrite touching dozens of functions), this hydrates the OLD in-memory
+// shape (SD.students array, SD.scores[term][sid][subject]) FROM the new
+// V2 structure at load time. Every existing render function keeps working
+// completely unchanged — they still see the same shapes they always did.
+// The dual-write on save (Phase 1+2) keeps V2 current; this hydration
+// keeps the in-memory old-shape current on load. Once this is proven
+// solid, the flat `school.students`/`school.scores` fields on the parent
+// doc become redundant and can eventually be dropped — not done yet.
+// ═══════════════════════════════════════════════════════════════════════
+
+// ── Read-path bridge: V2 Firestore → old in-memory shape ─────────────────
+// Call after loadSchoolIntoSD(). If the school has no V2 data yet (never
+// migrated), this is a safe no-op and the old flat data already loaded
+// by loadSchoolIntoSD stays exactly as-is.
+async function hydrateFromV2(schoolId) {
+  if (!schoolId || SD.config?._demo) return;
+  try {
+    const v2Students = await loadAllStudentsV2(schoolId);
+    if (!v2Students.length) return; // nothing migrated yet — old flat data stands as-is
+
+    const students = [];
+    const scores = {};
+    for (const s of v2Students) {
+      const fees = await loadStudentFeesV2(schoolId, s.id);
+      const studentScores = await loadStudentScoresV2(schoolId, s.id);
+      const student = {
+        _v2Id: s.id, name: s.name, phone: s.phone || '', class: s.class || '',
+        totalFee: fees.totalFee || 0, paid: fees.paid || 0, paymentHistory: fees.paymentHistory || []
+      };
+      students.push(student);
+      const sid = s.id; // V2 doc id doubles as the sid key for score lookups, consistent with s.id||idx elsewhere
+      Object.keys(studentScores).forEach(term => {
+        if (!scores[term]) scores[term] = {};
+        scores[term][sid] = studentScores[term];
+      });
+    }
+    SD.students = students;
+    SD.scores = scores;
+    saveLocal('students', SD.students);
+    saveLocal('scores', SD.scores);
+    console.log(`✅ Hydrated ${students.length} students from V2 structure`);
+  } catch (e) {
+    console.warn('hydrateFromV2 failed, keeping old flat data:', e.message);
+  }
+}
+
+// ── One-time migration: old flat data → new V2 structure ─────────────────
+// Safe to re-run — skips any student that already has a _v2Id (already migrated).
+// Run manually (e.g. a Settings button, or paste `migrateStudentsToV2(schoolId)`
+// into DevTools console) — not automatic on login, since it's a real write
+// operation that should happen deliberately, once, per school.
+async function migrateStudentsToV2(schoolId) {
+  if (!schoolId) { console.error('No schoolId'); return; }
+  let migrated = 0, skipped = 0;
+  for (let i = 0; i < SD.students.length; i++) {
+    const s = SD.students[i];
+    if (s._v2Id) { skipped++; continue; }
+    try {
+      const v2Id = await saveStudentProfileV2(schoolId, s);
+      await saveStudentFeesV2(schoolId, v2Id, {
+        totalFee: s.totalFee || 0, paid: s.paid || 0, paymentHistory: s.paymentHistory || []
+      });
+      const sid = s.id || i; // matches the sid convention already used throughout the old code
+      for (const term of Object.keys(SD.scores || {})) {
+        const subjMap = SD.scores[term]?.[sid];
+        if (!subjMap) continue;
+        for (const subject of Object.keys(subjMap)) {
+          await saveScoreV2(schoolId, v2Id, term, subject, subjMap[subject]);
+        }
+      }
+      s._v2Id = v2Id;
+      migrated++;
+    } catch (e) {
+      console.error('Migration failed for student', s.name, e.message);
+    }
+  }
+  saveLocal('students', SD.students);
+  console.log(`✅ Migration done: ${migrated} migrated, ${skipped} already had a V2 record.`);
+  return { migrated, skipped };
+}
+
+// ── Staff account claim — since existing passwords are hashed and can't be
+// reversed, each existing staff member sets a NEW password once, which
+// creates their real Firebase Auth account and links it via staff_directory.
+// This does NOT touch their existing legacy login — that keeps working
+// until every staff member has claimed their real account.
+async function claimStaffAccountV2(schoolId, email, newPassword) {
+  const staffRecord = (SD.staff || []).find(s => s.email === email);
+  if (!staffRecord) throw new Error('No staff record found with that email at this school.');
+  if (newPassword.length < 6) throw new Error('Password needs at least 6 characters (Firebase Auth requirement).');
+  const uid = await createStaffAccountV2(schoolId, email, newPassword, {
+    name: staffRecord.name, role: staffRecord.role,
+    assignedClass: staffRecord.assignedClass || null,
+    assignedSubjects: staffRecord.assignedSubjects || []
+  });
+  staffRecord._v2Uid = uid;
+  await SQ.push('staff', SD.staff);
+  return uid;
+}
+
+// ── Simple UI triggers — usable right now without any new HTML markup.
+// Wire to a real button later; for now callable from a console or any
+// onclick="..." you want to attach.
+function runMigrationUI() {
+  if (!confirm(`Migrate all ${SD.students.length} students to the new per-student data structure? Safe to run more than once — already-migrated students are skipped.`)) return;
+  migrateStudentsToV2(schoolId).then(({migrated, skipped}) => {
+    alert(`✅ Migration complete.\n${migrated} students migrated.\n${skipped} already had a record (skipped).`);
+  }).catch(e => alert('Migration failed: ' + e.message));
+}
+function claimAccountUI() {
+  const email = prompt('Your staff email (as registered by the Principal):');
+  if (!email) return;
+  const pwd = prompt('Choose a new password (6+ characters) — this becomes your real login going forward:');
+  if (!pwd) return;
+  claimStaffAccountV2(schoolId, email, pwd)
+    .then(() => alert('✅ Account claimed. You can now log in with this email + password directly.'))
+    .catch(e => alert('Failed: ' + e.message));
+}
+
 function loadSchoolIntoSD(sid, school) {
   SD.config = school.config || {};
   SD.students = school.students || [];
@@ -1270,6 +1394,7 @@ async function doLogin() {
         scores: loadLocal('scores', {}), affective: loadLocal('affective', {}),
         opportunities: loadLocal('opportunities', defaultOpps())
       });
+      await hydrateFromV2(sid).catch(() => {});
       const cachedSession = localStorage.getItem(`p_${sid}_staffSession`);
       if (cachedSession) {
         try {
@@ -1323,6 +1448,7 @@ async function doLogin() {
     schoolId = sid;
     _saveAuth(sid, '');
     loadSchoolIntoSD(sid, school);
+    await hydrateFromV2(sid).catch(() => {});
     const fsSession = localStorage.getItem(`p_${sid}_staffSession`);
     if (fsSession) {
       try { const sess = JSON.parse(fsSession); currentStaff = sess; userRole = sess.role || 'Principal'; startApp(); btn.textContent = '▶ Enter Portal'; btn.disabled = false; return; } catch (e) {}
@@ -6220,6 +6346,7 @@ async function _confirmFeeImport(matched) {
       commsLog:     loadLocal('commsLog', []),
       opportunities:loadLocal('opportunities', defaultOpps())
     });
+    hydrateFromV2(auth.schoolId).catch(() => {}); // non-blocking — offline-first startup shouldn't wait on this
     // Restore staff session if cached — otherwise show role selector
     const cachedSession = localStorage.getItem(`p_${auth.schoolId}_staffSession`);
     if (cachedSession) {
