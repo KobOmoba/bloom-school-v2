@@ -1020,6 +1020,110 @@ async function doStaffLogin() {
   startApp();
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// PHASE 1 + 2 — new data model, built dual-write alongside the existing
+// flat structure. Nothing existing is removed or rewired yet — this is
+// additive, so nothing that currently works can break by adding it.
+//
+// New shape:
+//   schools/{id}/students/{studentId}                    → profile only (name, class, phone, attendance, swot)
+//   schools/{id}/students/{studentId}/private/fees        → totalFee, paid, paymentHistory (Principal/Bursar only, once rules are live)
+//   schools/{id}/students/{studentId}/scores/{term_subject} → ca1/ca2/ca3/exam, one doc per subject per term
+//   schools/{id}/staff_directory/{uid}                     → real Firebase Auth UID as the key, role, assignedClass, assignedSubjects
+//
+// Firestore rules for this shape are drafted (not yet published) — see
+// bloom-school-v2 README, "Phase 3" section, for the exact rule text and
+// the reasoning behind the per-subject score-document split.
+//
+// Score doc IDs use `Term1_Mathematics` style (spaces stripped) so they're
+// valid Firestore doc IDs and stay human-readable in the console.
+// ═══════════════════════════════════════════════════════════════════════
+
+function _scoreDocId(term, subject) {
+  return String(term).replace(/\s+/g, '') + '_' + String(subject).replace(/\s+/g, '');
+}
+function _studentsColV2(schoolId) {
+  return db.collection('schools').doc(schoolId).collection('students');
+}
+function _staffDirColV2(schoolId) {
+  return db.collection('schools').doc(schoolId).collection('staff_directory');
+}
+
+// ── Students (profile only — no fees, no scores) ──────────────────────────
+async function loadAllStudentsV2(schoolId) {
+  const snap = await _studentsColV2(schoolId).get();
+  return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+}
+async function saveStudentProfileV2(schoolId, student) {
+  const profile = {
+    name: student.name || '', phone: student.phone || '', class: student.class || '',
+    updatedAt: new Date().toISOString()
+  };
+  const docId = student.id || _studentsColV2(schoolId).doc().id;
+  await _studentsColV2(schoolId).doc(docId).set(profile, { merge: true });
+  return docId;
+}
+async function deleteStudentV2(schoolId, studentId) {
+  // NOTE: Firestore does not cascade-delete subcollections automatically —
+  // this leaves the private/fees doc and any scores/* docs orphaned under
+  // a deleted parent. Not cleaned up in this pass — flagged in README as a
+  // known gap, needs a small cleanup pass (delete subcollection docs first)
+  // before this matters in production.
+  await _studentsColV2(schoolId).doc(studentId).delete();
+}
+
+// ── Fees (separately gated sub-document — Principal/Bursar only once rules are live) ──
+async function loadStudentFeesV2(schoolId, studentId) {
+  const doc = await _studentsColV2(schoolId).doc(studentId).collection('private').doc('fees').get();
+  return doc.exists ? doc.data() : { totalFee: 0, paid: 0, paymentHistory: [] };
+}
+async function saveStudentFeesV2(schoolId, studentId, feeData) {
+  await _studentsColV2(schoolId).doc(studentId).collection('private').doc('fees')
+    .set({ ...feeData, updatedAt: new Date().toISOString() }, { merge: true });
+}
+
+// ── Scores (one document per student, per term, per subject — this split is
+// what makes per-subject-teacher rules possible; see Phase 3 rule design) ──
+async function saveScoreV2(schoolId, studentId, term, subject, scoreData) {
+  await _studentsColV2(schoolId).doc(studentId).collection('scores').doc(_scoreDocId(term, subject))
+    .set({ term, subject, ca1: scoreData.ca1||0, ca2: scoreData.ca2||0, ca3: scoreData.ca3||0, exam: scoreData.exam||0 }, { merge: true });
+}
+async function loadStudentScoresV2(schoolId, studentId) {
+  const snap = await _studentsColV2(schoolId).doc(studentId).collection('scores').get();
+  const scores = {}; // { term: { subject: {ca1,ca2,ca3,exam} } }
+  snap.docs.forEach(doc => {
+    const d = doc.data();
+    if (!scores[d.term]) scores[d.term] = {};
+    scores[d.term][d.subject] = { ca1: d.ca1||0, ca2: d.ca2||0, ca3: d.ca3||0, exam: d.exam||0 };
+  });
+  return scores;
+}
+
+// ── Staff (real Firebase Auth accounts, keyed by their real uid) ──────────
+async function createStaffAccountV2(schoolId, email, password, staffData) {
+  const cred = await firebase.auth().createUserWithEmailAndPassword(email, password);
+  await _staffDirColV2(schoolId).doc(cred.user.uid).set({
+    name: staffData.name || '', email, role: staffData.role,
+    assignedClass: staffData.assignedClass || null,       // Class Teacher only
+    assignedSubjects: staffData.assignedSubjects || [],    // Subject Teacher only
+    createdAt: new Date().toISOString()
+  });
+  return cred.user.uid;
+}
+async function staffLoginV2(schoolId, email, password) {
+  const cred = await firebase.auth().signInWithEmailAndPassword(email, password);
+  const doc = await _staffDirColV2(schoolId).doc(cred.user.uid).get();
+  if (!doc.exists) {
+    await firebase.auth().signOut();
+    throw new Error('Signed in, but no staff record found for this account at this school.');
+  }
+  return { uid: cred.user.uid, ...doc.data() };
+}
+async function loadStaffDirectoryV2(schoolId) {
+  const snap = await _staffDirColV2(schoolId).get();
+  return snap.docs.map(doc => ({ uid: doc.id, ...doc.data() }));
+}
+
 function loadSchoolIntoSD(sid, school) {
   SD.config = school.config || {};
   SD.students = school.students || [];
@@ -1736,8 +1840,17 @@ async function addStudent() {
   const cls = $('ns-class').value.trim(), fee = parseFloat($('ns-fee').value) || SD.config.fee || 50000;
   const dob = $('ns-dob')?.value || '';
   if (!name || !phone) return alert('Name and phone required.');
-  SD.students.push({ name, phone, class: cls, totalFee: fee, paid: 0, scores: {}, swot: {}, dob });
+  const newStudent = { name, phone, class: cls, totalFee: fee, paid: 0, scores: {}, swot: {}, dob };
+  SD.students.push(newStudent);
   await SQ.push('students', SD.students); checkTierStatus();
+  if (schoolId && !SD.config?._demo) {
+    saveStudentProfileV2(schoolId, newStudent)
+      .then(v2Id => {
+        newStudent._v2Id = v2Id; // link the in-memory record to its V2 doc for later dual-writes
+        return saveStudentFeesV2(schoolId, v2Id, { totalFee: fee, paid: 0, paymentHistory: [] });
+      })
+      .catch(e => console.warn('V2 dual-write (addStudent) failed:', e.message));
+  }
   closeM('add-student-modal');
   $('ns-name').value=''; $('ns-phone').value=''; $('ns-class').value=''; $('ns-fee').value='';
   if ($('ns-dob')) $('ns-dob').value = '';
@@ -1746,8 +1859,12 @@ async function addStudent() {
 
 async function deleteStudent(idx) {
   if (!confirm(`Delete ${SD.students[idx]?.name}?`)) return;
+  const v2Id = SD.students[idx]?._v2Id;
   SD.students.splice(idx, 1);
   await SQ.push('students', SD.students); checkTierStatus();
+  if (schoolId && v2Id && !SD.config?._demo) {
+    deleteStudentV2(schoolId, v2Id).catch(e => console.warn('V2 dual-write (deleteStudent) failed:', e.message));
+  }
   closeM('student-modal'); renderStudentList(); renderBanner();
 }
 
@@ -2374,6 +2491,14 @@ async function recordPayment(idx) {
   if (!SD.students[idx].paymentHistory) SD.students[idx].paymentHistory = [];
   SD.students[idx].paymentHistory.unshift({ amount: amt, method: $('pay-method')?.value || 'Cash', date: $('pay-date')?.value || new Date().toISOString().split('T')[0], by: userRole });
   await SQ.push('students', SD.students); checkTierStatus();
+  const v2Id = SD.students[idx]?._v2Id;
+  if (schoolId && v2Id && !SD.config?._demo) {
+    saveStudentFeesV2(schoolId, v2Id, {
+      totalFee: SD.students[idx].totalFee || 0,
+      paid: SD.students[idx].paid,
+      paymentHistory: SD.students[idx].paymentHistory
+    }).catch(e => console.warn('V2 dual-write (recordPayment) failed:', e.message));
+  }
   if ($('pay-amt')) $('pay-amt').value = '';
   renderTab('fees'); renderBanner(); renderRevenue();
   alert(`✅ ${fmt(amt)} recorded for ${SD.students[idx].name}`);
@@ -2685,6 +2810,18 @@ function updateAffective(idx, term, key, val) {
 function saveScores(idx) {
   saveLocal('scores', SD.scores);
   SQ.push('scores', SD.scores);
+  const v2Id = SD.students[idx]?._v2Id;
+  const sid = SD.students[idx]?.id || idx;
+  if (schoolId && v2Id && !SD.config?._demo) {
+    Object.keys(SD.scores).forEach(term => {
+      const subjMap = SD.scores[term]?.[sid];
+      if (!subjMap) return;
+      Object.keys(subjMap).forEach(subject => {
+        saveScoreV2(schoolId, v2Id, term, subject, subjMap[subject])
+          .catch(e => console.warn('V2 dual-write (saveScores) failed:', term, subject, e.message));
+      });
+    });
+  }
   toast('✅ Scores saved!');
 }
 
@@ -3436,7 +3573,7 @@ async function addStaff() {
   const assignedSubjectsRaw = ($('sf-subjects')?.value || '').trim();
   const assignedSubjects = assignedSubjectsRaw ? assignedSubjectsRaw.split(',').map(s=>s.trim()).filter(Boolean) : [];
   if (!name || !email || !pwd) return alert('Fill all fields.');
-  if (pwd.length < 4) return alert('Password min 4 chars.');
+  if (pwd.length < 6) return alert('Password min 6 chars (Firebase Auth requirement).');
   if (role === 'Class Teacher' && !assignedClass) return alert('Assign a class for this Class Teacher.');
   if ((SD.staff||[]).find(s => s.email === email)) return alert('Email already registered.');
   const isPrem = SD.config.plan === 'premium';
@@ -3445,6 +3582,11 @@ async function addStaff() {
     const hashedPwd = await _hashPassword(pwd);
   SD.staff.push({ name, email, password: hashedPwd, role, assignedClass: assignedClass||null, assignedSubjects });
   await SQ.push('staff', SD.staff);
+  if (schoolId && !SD.config?._demo) {
+    createStaffAccountV2(schoolId, email, pwd, { name, role, assignedClass: assignedClass||null, assignedSubjects })
+      .then(uid => { SD.staff[SD.staff.length-1]._v2Uid = uid; })
+      .catch(e => console.warn('V2 dual-write (addStaff) failed — real auth account NOT created, legacy login still works:', e.message));
+  }
   closeM('add-staff-modal');
   $('sf-name').value=''; $('sf-email').value=''; $('sf-pwd').value='';
   const sfc=$('sf-class'); if(sfc) sfc.value='';
