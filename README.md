@@ -100,18 +100,51 @@ the new read path first (see "Not yet done" below), or publishing these
 rules would break the app immediately since it still reads the old
 structure.
 
+### Phase 4 — migration + read-path bridge (built)
+
+**Read-path bridge, not a rewrite.** Rather than rewriting every render/
+scorecard/report-card function to fetch from Firestore individually (a
+much bigger, riskier change touching dozens of functions), `hydrateFromV2()`
+loads the new structure back into the *old* in-memory shape
+(`SD.students` array, `SD.scores[term][sid][subject]`) right after login.
+Every existing render function keeps working completely unchanged — they
+still see the exact shapes they always did. Wired into all three login
+paths (localStorage-cache, network, auto-login-on-page-load). If a school
+has no V2 data yet, this is a safe no-op and the old flat data stands.
+
+**Migration script — `migrateStudentsToV2(schoolId)`.** Converts a
+school's existing flat students/scores/fees into the new per-document
+structure. Idempotent — already-migrated students (has `_v2Id`) are
+skipped, safe to run more than once. Callable via `runMigrationUI()`
+(confirm dialog + result summary) or directly from DevTools console.
+**Not automatic on login** — this is a real write operation and should
+happen deliberately, once, per school.
+
+**Staff accounts cannot be auto-migrated — this is a hard constraint, not
+an oversight.** Existing staff passwords are SHA-256 hashed; hashes can't
+be reversed, so there's no way to know a staff member's real password to
+create their Firebase Auth account automatically. Each existing staff
+member has to set a **new** password once via `claimAccountUI()` (prompts
+for email + new password, creates their real account, links it in
+`staff_directory`). Their legacy hashed-password login keeps working
+until they've claimed their account — nobody gets locked out mid-transition.
+
 ### Explicitly NOT done yet
-- App still **reads** from the old flat structure everywhere (rendering,
-  scorecards, report cards, bulk CSV/OCR import) — only writes go to both
-  places. A full read-path migration is the next real chunk of work.
 - Rules above are drafted, not published — publishing them now would lock
-  everyone out immediately, since nothing reads the new structure yet.
-- No migration script for existing schools' data (converting an existing
-  flat `SD.students`/`SD.scores` into the new per-document shape).
-- Login screen doesn't yet offer the real-auth path to staff — `addStaff`
-  creates the Firebase Auth account, but `doLogin`'s staff step still only
-  checks the legacy hashed-password field.
+  everyone out immediately unless every school has been migrated AND every
+  staff member has claimed their account first. Sequencing matters here.
+- Login screen's staff-login step doesn't yet try the real-auth path first
+  the way bloom-portal's admin login does (Firebase Auth attempt, legacy
+  fallback) — right now `claimAccountUI()` creates the real account, but
+  `doLogin` doesn't yet check it before falling back to the hashed password.
+- `deleteStudentV2` doesn't cascade-delete a student's `private/fees` or
+  `scores/*` sub-documents — orphaned sub-docs would accumulate on delete.
 - No production port — this is 100% sandbox-only, `School-Bloom` untouched.
+- No testing yet against the uploaded stress-test data (65 students, 7
+  deliberately broken score entries) — worth running that through the new
+  structure once the login-flow piece above is closed, to confirm the
+  migration and hydration round-trip real data correctly, not just clean
+  synthetic cases.
 
 ---
 
