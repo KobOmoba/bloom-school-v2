@@ -1084,12 +1084,14 @@ async function saveStudentProfileV2(schoolId, student) {
   return docId;
 }
 async function deleteStudentV2(schoolId, studentId) {
-  // NOTE: Firestore does not cascade-delete subcollections automatically —
-  // this leaves the private/fees doc and any scores/* docs orphaned under
-  // a deleted parent. Not cleaned up in this pass — flagged in README as a
-  // known gap, needs a small cleanup pass (delete subcollection docs first)
-  // before this matters in production.
-  await _studentsColV2(schoolId).doc(studentId).delete();
+  const studentRef = _studentsColV2(schoolId).doc(studentId);
+  // Delete score sub-documents first
+  const scoresSnap = await studentRef.collection('scores').get();
+  const batch = db.batch();
+  scoresSnap.docs.forEach(doc => batch.delete(doc.ref));
+  batch.delete(studentRef.collection('private').doc('fees'));
+  batch.delete(studentRef);
+  await batch.commit();
 }
 
 // ── Fees (separately gated sub-document — Principal/Bursar only once rules are live) ──
