@@ -206,15 +206,21 @@ This gives real confidence the new data model round-trips correctly
 before it's ever pointed at a live school's actual data.
 
 ### Explicitly NOT done yet
-- Rules above are drafted, not published — publishing them now would lock
-  everyone out immediately unless every school has been migrated AND every
-  staff member has claimed their account first. Sequencing matters here.
-- Login screen's staff-login step doesn't yet try the real-auth path first
-  the way bloom-portal's admin login does (Firebase Auth attempt, legacy
-  fallback) — right now `claimAccountUI()` creates the real account, but
-  `doLogin` doesn't yet check it before falling back to the hashed password.
-- `deleteStudentV2` doesn't cascade-delete a student's `private/fees` or
-  `scores/*` sub-documents — orphaned sub-docs would accumulate on delete.
+- **Bayo's call, noted explicitly:** there are no real schools registered
+  in production yet, so the "publishing rules could lock people out" risk
+  that justified holding off no longer applies — nothing real to lock out
+  of. Rules can be published now.
+- `doStaffLogin()` fixed — tries `staffLoginV2` (real Firebase Auth) first,
+  falls back to the legacy hashed password if no real account exists yet.
+  Same pattern as bloom-portal's admin login.
+- `deleteStudentV2` fixed — now batch-deletes score docs and the fees
+  sub-doc before deleting the parent student document. No more orphans.
+- **Still genuinely not done:** no real-device/real-browser testing —
+  everything verified so far is code review, static checks, and a Node.js
+  simulation of the migration logic. Never actually hit real Firebase from
+  a real browser. This matters more, not less, now that rules are about to
+  go live — a rule with a typo behaves very differently in a live Firestore
+  console than it does read on a screen.
 - No production port — this is 100% sandbox-only, `School-Bloom` untouched.
 - No testing yet against the uploaded stress-test data (65 students, 7
   deliberately broken score entries) — worth running that through the new
