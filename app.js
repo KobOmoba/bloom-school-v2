@@ -1002,6 +1002,25 @@ async function doStaffLogin() {
   const errEl = $('sl-s-err');
   if (errEl) errEl.style.display = 'none';
   if (!email || !pwd) { if (errEl) { errEl.textContent = 'Enter your email and password.'; errEl.style.display = 'block'; } return; }
+
+  // Try real Firebase Auth first (own project, matches the pattern used for admin login).
+  try {
+    const v2Staff = await staffLoginV2(schoolId, email, pwd);
+    const staffRecord = (SD.staff || []).find(s => (s.email || '').trim().toLowerCase() === email) || {
+      name: v2Staff.name, email, role: v2Staff.role, assignedClass: v2Staff.assignedClass, assignedSubjects: v2Staff.assignedSubjects
+    };
+    staffRecord._v2Uid = v2Staff.uid;
+    currentStaff = staffRecord; userRole = v2Staff.role || staffRecord.role || 'Class Teacher';
+    localStorage.setItem('p_' + schoolId + '_staffSession', JSON.stringify(Object.assign({}, currentStaff, { schoolId })));
+    _saveAuth(schoolId, email);
+    const div = $('staff-login'); if (div) div.style.display = 'none';
+    startApp();
+    return;
+  } catch (authErr) {
+    // No real account yet, or wrong password for it — fall through to the legacy check below.
+  }
+
+  // Legacy fallback: hashed password stored on the staff record.
   let staff = null;
   for (const s of (SD.staff || [])) {
     if ((s.email || '').trim().toLowerCase() === email && await _verifyPassword(pwd, s.password || '')) {
