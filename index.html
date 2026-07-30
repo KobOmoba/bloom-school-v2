@@ -929,6 +929,11 @@ function toggleEye(inputId, btn) {
           <button class="btn-brand btn-sm" onclick="addSubjectFromInput()">+ Add</button>
         </div>
         <textarea id="set-subjects" rows="2" placeholder="Subjects list (auto-updated above)" style="font-size:0.72rem;color:var(--sub);"></textarea>
+        <label style="font-size:0.8rem;font-weight:600;display:block;margin:0.7rem 0 0.3rem;">Report Card Design</label>
+        <select id="s-report-theme" style="width:100%;margin-bottom:0.6rem;">
+          <option value="classic">Classic — clean, soft blue</option>
+          <option value="bold">Bold — color-blocked, high contrast</option>
+        </select>
         <button class="btn-brand" onclick="saveSettings()">💾 Save Settings</button>
       </div>
 
@@ -1078,6 +1083,7 @@ function toggleEye(inputId, btn) {
       <button class="ptab" data-pt="scores" onclick="setTab('scores')">📚 Scores</button>
       <button class="ptab" data-pt="report" onclick="setTab('report')">📋 Report Card</button>
       <button class="ptab" data-pt="swot" onclick="setTab('swot')">🧠 SWOT</button>
+      <button class="ptab" data-pt="promotion" onclick="setTab('promotion')">🎓 Promotion</button>
     </div>
     <div id="profile-content"></div>
     <button class="btn-ghost" style="margin-top:0.65rem;color:var(--danger);border-color:var(--danger);" onclick="deleteStudent(activeIdx)">🗑️ Remove Student</button>
