@@ -1240,10 +1240,11 @@ async function migrateStudentsToV2(schoolId) {
 // This does NOT touch their existing legacy login — that keeps working
 // until every staff member has claimed their real account.
 async function claimStaffAccountV2(schoolId, email, newPassword) {
-  const staffRecord = (SD.staff || []).find(s => s.email === email);
+  const normEmail = (email || '').trim().toLowerCase();
+  const staffRecord = (SD.staff || []).find(s => (s.email || '').trim().toLowerCase() === normEmail);
   if (!staffRecord) throw new Error('No staff record found with that email at this school.');
   if (newPassword.length < 6) throw new Error('Password needs at least 6 characters (Firebase Auth requirement).');
-  const uid = await createStaffAccountV2(schoolId, email, newPassword, {
+  const uid = await createStaffAccountV2(schoolId, normEmail, newPassword, {
     name: staffRecord.name, role: staffRecord.role,
     assignedClass: staffRecord.assignedClass || null,
     assignedSubjects: staffRecord.assignedSubjects || []
@@ -1263,13 +1264,30 @@ function runMigrationUI() {
   }).catch(e => alert('Migration failed: ' + e.message));
 }
 function claimAccountUI() {
-  const email = prompt('Your staff email (as registered by the Principal):');
-  if (!email) return;
-  const pwd = prompt('Choose a new password (6+ characters) — this becomes your real login going forward:');
-  if (!pwd) return;
-  claimStaffAccountV2(schoolId, email, pwd)
-    .then(() => alert('✅ Account claimed. You can now log in with this email + password directly.'))
-    .catch(e => alert('Failed: ' + e.message));
+  const errEl = $('claim-err'); if (errEl) errEl.style.display = 'none';
+  if ($('claim-email')) $('claim-email').value = '';
+  if ($('claim-pwd')) $('claim-pwd').value = '';
+  openM('claim-account-modal');
+}
+async function submitClaimAccount() {
+  const email = ($('claim-email')?.value || '').trim();
+  const pwd = $('claim-pwd')?.value || '';
+  const errEl = $('claim-err');
+  const btn = $('claim-submit-btn');
+  if (errEl) errEl.style.display = 'none';
+  if (!email || !pwd) {
+    if (errEl) { errEl.textContent = 'Fill in both fields.'; errEl.style.display = 'block'; }
+    return;
+  }
+  if (btn) { btn.disabled = true; btn.textContent = 'Setting up...'; }
+  try {
+    await claimStaffAccountV2(schoolId, email, pwd);
+    closeM('claim-account-modal');
+    alert('✅ Account claimed. You can now log in with this email + password directly.');
+  } catch (e) {
+    if (errEl) { errEl.textContent = e.message || 'Failed — try again.'; errEl.style.display = 'block'; }
+  }
+  if (btn) { btn.disabled = false; btn.textContent = '🔑 Claim Account'; }
 }
 
 function loadSchoolIntoSD(sid, school) {
