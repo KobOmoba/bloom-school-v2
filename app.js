@@ -942,6 +942,8 @@ function applyRoleRestrictions() {
       if (['sports', 'arts', 'music', 'health', 'opps'].includes(tab)) l.style.display = 'none';
     }
   });
+  const migrateBtn = document.getElementById('btn-migrate-students');
+  if (migrateBtn) migrateBtn.style.display = (userRole === 'Principal') ? '' : 'none';
 }
 
 // ── Staff Login Step 2 ──────────────────────────────────────────────────
