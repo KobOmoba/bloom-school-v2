@@ -165,8 +165,11 @@ has no V2 data yet, this is a safe no-op and the old flat data stands.
 **Migration script — `migrateStudentsToV2(schoolId)`.** Converts a
 school's existing flat students/scores/fees into the new per-document
 structure. Idempotent — already-migrated students (has `_v2Id`) are
-skipped, safe to run more than once. Callable via `runMigrationUI()`
-(confirm dialog + result summary) or directly from DevTools console.
+skipped, safe to run more than once. **Now a real tappable button** —
+Settings → "📦 Migrate Students to New Structure", **Principal-only**
+(hidden from other roles in `applyRoleRestrictions()`). Initially only
+existed as a console-callable function, which nobody should have to use —
+fixed after Bayo correctly couldn't find it in the actual app.
 **Not automatic on login** — this is a real write operation and should
 happen deliberately, once, per school.
 
@@ -174,10 +177,12 @@ happen deliberately, once, per school.
 an oversight.** Existing staff passwords are SHA-256 hashed; hashes can't
 be reversed, so there's no way to know a staff member's real password to
 create their Firebase Auth account automatically. Each existing staff
-member has to set a **new** password once via `claimAccountUI()` (prompts
-for email + new password, creates their real account, links it in
-`staff_directory`). Their legacy hashed-password login keeps working
-until they've claimed their account — nobody gets locked out mid-transition.
+member has to set a **new** password once via **Settings → "🔑 Claim a
+Staff Account"** (prompts for email + new password, creates their real
+account, links it in `staff_directory`). This button is visible to
+**every role**, not just Principal — every staff member needs to reach it
+themselves. Their legacy hashed-password login keeps working until
+they've claimed their account — nobody gets locked out mid-transition.
 
 ### Stress test — migration logic verified against real edge-case data
 
