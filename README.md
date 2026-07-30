@@ -7,6 +7,56 @@ already used for `bloom-agent-v2` → `bloom-agent`.
 
 ---
 
+## 🎓 Annual Promotion Report Card + Report Card Design Picker
+
+**Gap found by Bayo:** report cards only existed per-term — nothing
+summarized all 3 terms into one final card for end-of-year promotion
+decisions.
+
+**Built:**
+- **New "🎓 Promotion" tab** on the student profile. Records academic
+  year, decision (Promoted / Promoted on Trial / Repeat), next class, and
+  a comment. **Decision ownership is enforced client-side**: only that
+  student's specific Class Teacher (via `getAssignedClass()` matching the
+  student's `class`) or the Principal can set it — everyone else sees it
+  read-only, per Bayo's explicit direction that this is the class
+  teacher's call, with the Principal always able to see it.
+- **`printPromotionReportCard(idx)`** — a new printable card using the
+  already-existing `calcCumulative()` logic (same function powering the
+  Scorecard's Cumulative tab) to show all 3 terms' scores per subject,
+  the cumulative average and grade, class position based on cumulative
+  average (not any single term), full-year attendance, and the promotion
+  decision in a colored callout (green/amber/red for
+  Promoted/Trial/Repeat).
+- **Report card theme picker** — new Settings dropdown, "Classic" (the
+  existing look, completely unchanged) or "Bold" (navy/gold,
+  color-blocked). Implemented as a CSS override layer
+  (`_reportCardThemeCSS()`) rather than duplicating the whole card
+  template — "Classic" returns an empty override so its output is
+  byte-identical to before this change. Applies to both the per-term card
+  and the new promotion card.
+
+**Real bug found and fixed while wiring this up:** `saveStudentProfileV2`
+was checking `student.id` to decide whether to update an existing V2
+document or create a new one — but every other function in Phase 1/2/4
+links students via `student._v2Id`, not `.id`. This meant any call to
+`saveStudentProfileV2` for an *existing* student (not just this new
+promotion feature — any future profile edit) would have silently created
+a **duplicate document** instead of updating the right one, since `.id`
+is usually undefined. Fixed to check `_v2Id` first. Not something the
+promotion feature itself needed to work correctly today — the old flat
+structure isn't affected by this bug — but would have caused quiet data
+duplication in the new V2 structure the next time anyone touched an
+existing student's profile.
+
+**Not done:** the two uploaded reference images (a clean teal/blue
+homeschool template, a bold navy/gold annual-report template) weren't
+copied — they're watermarked commercial templates from Template.net and
+Slidesdocs. "Classic" and "Bold" take inspiration from that same
+clean-vs-bold contrast as original designs instead.
+
+---
+
 ## 🔐 Per-Class / Per-Subject Data Isolation — Phase 1 + 2 built, Phase 3 (rules) drafted, not live
 
 **The requirement, confirmed with Bayo directly:** every student's data is
