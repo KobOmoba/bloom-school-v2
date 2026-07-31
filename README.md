@@ -7,6 +7,42 @@ already used for `bloom-agent-v2` → `bloom-agent`.
 
 ---
 
+## 🐛 First real-device bugs found — Claim Account flow
+
+Bayo actually tapped "🔑 Claim a Staff Account" on a real phone (Brave,
+Android) and hit two genuine bugs that static checks and the Node
+simulation couldn't have caught:
+
+1. **Chained native `prompt()` dialogs froze on Android.** `claimAccountUI()`
+   called `prompt()` twice in a row (email, then password). The second
+   dialog would render with a keyboard, but the input field and OK button
+   were unresponsive to touch — until taking a screenshot forced a
+   redraw, which "unstuck" it. This is a known reliability issue with
+   back-to-back native browser dialogs on Android WebViews, not something
+   that shows up in code review. **Fixed:** replaced both `prompt()` calls
+   with a real on-screen modal (`claim-account-modal`) — two proper
+   `<input>` fields, no native dialogs at all.
+2. **Email matching was case-sensitive**, so any capitalization mismatch
+   between what the Principal typed when adding staff and what the
+   teacher typed when claiming their account produced an instant "No
+   staff record found" — even for the correct email. `doStaffLogin()`
+   already normalized with `.trim().toLowerCase()`; `claimStaffAccountV2()`
+   didn't. Fixed to match.
+
+**While fixing this, also closed a smaller gap:** the eye/show-password
+toggle (`toggleEye()`, already used on the Settings and Add-Staff password
+fields) was missing from Principal login, staff login, and the new claim
+modal. Added to all three for consistency — every password field in the
+app now has it.
+
+**Worth noting for the next session:** this is exactly why "verified by
+code review + simulation" and "confirmed working on a real device" are
+different claims — the migration/hydration logic was thoroughly tested
+and correct, but the *UI interaction* bug only showed up once a real
+finger tapped a real screen.
+
+---
+
 ## 🎓 Annual Promotion Report Card + Report Card Design Picker
 
 **Gap found by Bayo:** report cards only existed per-term — nothing
