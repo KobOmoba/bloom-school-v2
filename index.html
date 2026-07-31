@@ -149,9 +149,12 @@ function toggleEye(inputId, btn) {
     <!-- Principal panel -->
     <div id="sl-panel-p">
       <label style="font-size:0.82rem;font-weight:700;color:var(--sub);margin-bottom:0.3rem;display:block;">School Password</label>
-      <input type="password" id="sl-p-pwd" placeholder="Enter password (e.g. bloom2026)"
-        style="width:100%;padding:0.65rem 0.8rem;border:1.5px solid var(--border);border-radius:10px;font-size:0.95rem;background:var(--bg);color:var(--text);box-sizing:border-box;margin-bottom:0.5rem;"
-        onkeydown="if(event.key==='Enter')doPrincipalLogin()">
+      <div class="pwd-wrap">
+        <input type="password" id="sl-p-pwd" placeholder="Enter password (e.g. bloom2026)"
+          style="width:100%;padding:0.65rem 0.8rem;border:1.5px solid var(--border);border-radius:10px;font-size:0.95rem;background:var(--bg);color:var(--text);box-sizing:border-box;margin-bottom:0.5rem;"
+          onkeydown="if(event.key==='Enter')doPrincipalLogin()">
+        <button type="button" class="eye-btn" onclick="toggleEye('sl-p-pwd',this)" tabindex="-1">👁️</button>
+      </div>
       <div id="sl-p-err" class="err" style="display:none;"></div>
       <button class="btn-brand" onclick="doPrincipalLogin()" style="width:100%;margin-top:0.4rem;padding:0.7rem;font-size:0.95rem;">🔓 Enter as Principal</button>
       <button type="button" onclick="slForgotPassword()" style="width:100%;background:transparent;border:none;color:var(--sub);font-size:0.78rem;margin-top:0.5rem;cursor:pointer;text-decoration:underline;">Forgot password? Contact agent via WhatsApp</button>
@@ -164,9 +167,12 @@ function toggleEye(inputId, btn) {
         style="width:100%;padding:0.65rem 0.8rem;border:1.5px solid var(--border);border-radius:10px;font-size:0.9rem;background:var(--bg);color:var(--text);box-sizing:border-box;margin-bottom:0.5rem;"
         onkeydown="if(event.key==='Enter')document.getElementById('sl-pwd').focus()">
       <label style="font-size:0.82rem;font-weight:700;color:var(--sub);margin-bottom:0.3rem;display:block;">Password</label>
-      <input type="password" id="sl-pwd" placeholder="Your staff password"
-        style="width:100%;padding:0.65rem 0.8rem;border:1.5px solid var(--border);border-radius:10px;font-size:0.9rem;background:var(--bg);color:var(--text);box-sizing:border-box;margin-bottom:0.5rem;"
-        onkeydown="if(event.key==='Enter')doStaffLogin()">
+      <div class="pwd-wrap">
+        <input type="password" id="sl-pwd" placeholder="Your staff password"
+          style="width:100%;padding:0.65rem 0.8rem;border:1.5px solid var(--border);border-radius:10px;font-size:0.9rem;background:var(--bg);color:var(--text);box-sizing:border-box;margin-bottom:0.5rem;"
+          onkeydown="if(event.key==='Enter')doStaffLogin()">
+        <button type="button" class="eye-btn" onclick="toggleEye('sl-pwd',this)" tabindex="-1">👁️</button>
+      </div>
       <div id="sl-s-err" class="err" style="display:none;"></div>
       <button class="btn-brand" onclick="doStaffLogin()" style="width:100%;margin-top:0.4rem;padding:0.7rem;font-size:0.95rem;">🔓 Enter as Staff</button>
     </div>
@@ -960,7 +966,10 @@ function toggleEye(inputId, btn) {
             <label style="font-size:0.8rem;font-weight:600;">Your Staff Email</label>
             <input type="email" id="claim-email" placeholder="you@school.edu.ng" autocomplete="off">
             <label style="font-size:0.8rem;font-weight:600;margin-top:0.6rem;display:block;">New Password (6+ characters)</label>
-            <input type="password" id="claim-pwd" placeholder="Choose a password" autocomplete="off">
+            <div class="pwd-wrap">
+              <input type="password" id="claim-pwd" placeholder="Choose a password" autocomplete="off">
+              <button type="button" class="eye-btn" onclick="toggleEye('claim-pwd',this)" tabindex="-1">👁️</button>
+            </div>
             <div id="claim-err" style="display:none;color:var(--danger);font-size:0.78rem;margin-top:0.5rem;"></div>
             <button class="btn-brand" id="claim-submit-btn" style="width:100%;margin-top:0.8rem;" onclick="submitClaimAccount()">🔑 Claim Account</button>
           </div>
