@@ -7,6 +7,34 @@ already used for `bloom-agent-v2` → `bloom-agent`.
 
 ---
 
+## 🔴 CRITICAL — Firebase Auth SDK was never loaded (found via real-device test)
+
+**`index.html` only loaded `firebase-app-compat.js` and
+`firebase-firestore-compat.js` — `firebase-auth-compat.js` was missing
+entirely.** Every piece of Phase 2 code (`createStaffAccountV2`,
+`staffLoginV2`, `claimStaffAccountV2`, the admin login's
+`signInWithEmailAndPassword` attempt) has been calling `firebase.auth()`
+on an object that never had that method — throwing
+`"firebase.auth is not a function"` on every real attempt, the whole time
+Phase 2/3/4 were being built and "verified." Static checks and the Node
+simulation never caught this because neither one loads real `<script>`
+tags — this is exactly the class of bug that only shows up when a real
+browser actually runs the page. Fixed: added the missing script tag.
+
+**Two other things Bayo saw in the same test session that are NOT bugs,
+worth being clear about the difference:**
+- **"No staff record found with that email"** — expected. The test email
+  used wasn't added as a staff member via Add Staff first. Correct
+  sequence: Principal adds the staff member (with their email) →
+  *then* that person can claim their account with that same email.
+- **"Groq API key not loaded"** — expected. This school's
+  `public_ocr_keys/main` document hasn't been populated yet. Fixed on the
+  portal side (`syncOcrKeysToPublic()`), but someone needs to actually tap
+  "Sync OCR Keys for Agent App" in the Portal's Settings at least once —
+  it's not automatic, and this sandbox school never triggered it.
+
+---
+
 ## 🐛 First real-device bugs found — Claim Account flow
 
 Bayo actually tapped "🔑 Claim a Staff Account" on a real phone (Brave,
