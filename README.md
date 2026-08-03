@@ -1,5 +1,43 @@
 # bloom-school-v2
 
+## Latest Update — 2026-08-03 — Fixed: Claim Account failing with auth/network-request-failed
+
+**Symptom:** `createStaffAccountV2()` / `claimStaffAccountV2()` (the
+"🔑 Claim Your Account" flow, Phase 2 of the per-class isolation work —
+see below) consistently failed with `Firebase: A network AuthError...
+(auth/network-request-failed)`, on a connection that could otherwise
+browse fine and reach Firebase Hosting directly.
+
+**Bayo's diagnosis (correct):** compare against the working production
+app rather than chase network theories. Root cause found by diffing
+Firebase configs between `bloom-portal` (where real Firebase Auth is
+meant to work) and this repo:
+
+| | apiKey | appId |
+|---|---|---|
+| bloom-portal | `AIzaSyDQ-Ss9-1XWkM2qFlZumLJM5KHLGMzw7Ss` | `...web:0f9d338ff75132e58389ec` |
+| bloom-school-v2 (was) | `AIzaSyCVEdunn3AZndDP5Rm1Z3Kv1e6G6W2mB_o` | `...web:2b3da887ede996ea8389ec` |
+
+Same Firebase project (`educationbloom-699ed`), but **two separately
+registered Web Apps with two different API keys.** Portal's key was set
+up specifically for the July 2026 Firebase Auth migration; every other
+app (`bloom-agent`, `School-Bloom` v1, and this sandbox) was still on the
+original key, which was apparently never provisioned/enabled for
+Identity Toolkit (Firebase Auth) — only Firestore. `School-Bloom` v1 and
+`bloom-agent` never hit this because neither calls `firebase.auth()` at
+all; this sandbox is the first app to add real Auth calls on the old key.
+
+**Fix:** `app.js`'s `FB` config now uses Portal's `apiKey`/`appId`.
+Nothing else changed — `authDomain`, `projectId`, `storageBucket`,
+`messagingSenderId` were already identical since it's the same project.
+
+**Lesson for next Claude:** if you add `firebase.auth()` calls to any
+app that doesn't already have them, check its `FB` config's `apiKey`
+against `bloom-portal`'s first — don't assume the original project key
+works for Auth just because it works for Firestore.
+
+---
+
 EduBloom School Portal — v2 test sandbox. This is where **Premium tier**
 features get built and validated before being ported into the live
 production app (`School-Bloom`), the same v2-first → port-later workflow
