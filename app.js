@@ -7,12 +7,12 @@
 
 // ── Firebase ───────────────────────────────────────────────────────────────
 const FB = {
-  apiKey: "AIzaSyCVEdunn3AZndDP5Rm1Z3Kv1e6G6W2mB_o",
+  apiKey: "AIzaSyDQ-Ss9-1XWkM2qFlZumLJM5KHLGMzw7Ss",
   authDomain: "educationbloom-699ed.firebaseapp.com",
   projectId: "educationbloom-699ed",
   storageBucket: "educationbloom-699ed.firebasestorage.app",
   messagingSenderId: "33750392965",
-  appId: "1:33750392965:web:2b3da887ede996ea8389ec"
+  appId: "1:33750392965:web:0f9d338ff75132e58389ec"
 };
 let db = null;
 try {
