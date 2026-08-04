@@ -1986,6 +1986,10 @@ function editStudent(idx) {
         <input type="file" id="edit-photo-input" accept="image/*" style="display:none;" onchange="handleEditPhoto(${idx},event)">
       </div>
 
+      <input type="file" accept="image/*" id="edit-scan-input" style="display:none;" onchange="scanStudentFormEdit(${idx},event)">
+      <button class="btn-brand" style="width:100%;margin-bottom:0.3rem;background:linear-gradient(135deg,#7c3aed,#2563eb);font-size:0.82rem;" onclick="$('edit-scan-input').click()">📷 Scan to Fill Missing Fields</button>
+      <div id="edit-scan-fb" style="display:none;font-size:0.78rem;color:var(--sub);margin-bottom:0.4rem;text-align:center;"></div>
+
       <label>Full Name</label>
       <input id="edit-s-name" value="${esc(s.name)}">
 
@@ -6170,14 +6174,21 @@ async function scanStudentForm(event) {
     const resized = await _resizeFeeImage(file, 1200);
     const key = await _getFeeGroqKey();
     if (!key) { show('❌ Groq key not found — ask Bayo to add it in portal settings.'); return; }
-    const prompt = `You are reading a photograph of a Nigerian school student admission form or student ID card.
-Extract:
-  name         = the student's full name (text, Nigerian names)
-  parent_phone = a parent/guardian WhatsApp or phone number if visible (digits only)
-  class        = the class/grade the student is being admitted into, if stated (text, e.g. "Basic 4", "JSS 1", "Nursery 2")
+    const prompt = `You are reading a photograph of a Nigerian school student record. This could be:
+- A formal admission form or student ID card
+- A handwritten notebook or register page with student details
+- A simple handwritten list or table with columns like Names, Phone, Class, Fee
+
+Extract ALL of the following fields if visible anywhere in the image:
+  name         = the student's full name (text, Nigerian names — Yoruba, Hausa, Igbo)
+  parent_phone = a parent/guardian WhatsApp or phone number (digits only, no spaces or dashes)
+  class        = the class/grade (text, e.g. "Basic 4", "JSS 1", "Nursery 2", "KG")
+  fee          = the school fee amount for this student (integer, Naira only, no symbol — e.g. 36000)
   dob          = date of birth if visible (raw text as written)
+
+IMPORTANT: If the image shows a TABLE or LIST with column headers like "Names", "Phone No", "Class", "Fee" — read the first data row as the student's details.
 ${_OCR_DISCIPLINE}
-Output ONLY: {"name":"","parent_phone":"","class":"","dob":""}`;
+Output ONLY: {"name":"","parent_phone":"","class":"","fee":null,"dob":""}`;
     const result = await _callGroqGenericVision(key, resized.base64, resized.mimeType, prompt, 400);
     if (fb) fb.style.display = 'none';
     if ($('ns-name') && result.name && result.name !== 'UNCLEAR') $('ns-name').value = result.name;
@@ -6186,14 +6197,63 @@ Output ONLY: {"name":"","parent_phone":"","class":"","dob":""}`;
       const opt = [...$('ns-class').options].find(o => o.value.toLowerCase() === result.class.toLowerCase());
       if (opt) $('ns-class').value = opt.value;
     }
+    if ($('ns-fee') && result.fee && result.fee !== 'UNCLEAR' && Number(result.fee) > 0) $('ns-fee').value = Number(result.fee);
     if ($('ns-dob') && result.dob && result.dob !== 'UNCLEAR') {
       const parsed = _parseNigerianDate(result.dob);
       if (parsed) $('ns-dob').value = parsed;
     }
-    show('✅ Filled from form — please verify before saving.');
-    setTimeout(() => { if (fb) fb.style.display = 'none'; }, 4000);
+    const filled = ['name','parent_phone','class','fee'].filter(f => result[f] && result[f] !== 'UNCLEAR' && result[f] !== null);
+    show(`✅ Filled: ${filled.join(', ')} — verify before saving.`);
+    setTimeout(() => { if (fb) fb.style.display = 'none'; }, 5000);
   } catch(e) {
     show('❌ ' + (e.message || 'Could not read form. Try a clearer photo.'));
+  }
+}
+
+// ── 3b. Scan to fill missing fields on existing student (Edit modal) ────
+async function scanStudentFormEdit(idx, event) {
+  if (!_isPremium()) { _gateScan('ns'); return; }
+  const file = event.target.files[0]; if (!file) return;
+  event.target.value = '';
+  const fb = document.getElementById('edit-scan-fb');
+  const show = m => { if (fb) { fb.style.display = 'block'; fb.textContent = m; } };
+  if (!navigator.onLine) { show('❌ No internet connection.'); return; }
+  show('📸 Reading document...');
+  try {
+    const resized = await _resizeFeeImage(file, 1200);
+    const key = await _getFeeGroqKey();
+    if (!key) { show('❌ Groq key not found — ask Bayo to add it in portal settings.'); return; }
+    const prompt = `You are reading a photograph of a Nigerian school student record. This could be a formal admission form, student ID card, or a handwritten notebook/register page.
+Extract ALL of the following fields if visible:
+  name         = the student's full name (Nigerian names)
+  parent_phone = a parent/guardian WhatsApp or phone number (digits only)
+  class        = the class/grade (e.g. "Basic 4", "JSS 1", "Nursery 2")
+  fee          = the school fee amount (integer, Naira only, no symbol)
+  dob          = date of birth if visible (raw text as written)
+If the image shows a TABLE with columns like "Names", "Phone No", "Class", "Fee" — read the first data row.
+${_OCR_DISCIPLINE}
+Output ONLY: {"name":"","parent_phone":"","class":"","fee":null,"dob":""}`;
+    const result = await _callGroqGenericVision(key, resized.base64, resized.mimeType, prompt, 400);
+    if (fb) fb.style.display = 'none';
+    const filled = [];
+    // Only fill fields that are currently empty or placeholder
+    const nameEl = $('edit-s-name'), phoneEl = $('edit-s-phone'), feeEl = $('edit-s-fee'), dobEl = $('edit-s-dob');
+    if (nameEl && result.name && result.name !== 'UNCLEAR') { nameEl.value = result.name; filled.push('name'); }
+    if (phoneEl && result.parent_phone && result.parent_phone !== 'UNCLEAR') { phoneEl.value = result.parent_phone.replace(/\D/g,''); filled.push('phone'); }
+    if (feeEl && result.fee && result.fee !== 'UNCLEAR' && Number(result.fee) > 0) { feeEl.value = Number(result.fee); filled.push('fee'); }
+    if (dobEl && result.dob && result.dob !== 'UNCLEAR') {
+      const parsed = _parseNigerianDate(result.dob);
+      if (parsed) { dobEl.value = parsed; filled.push('dob'); }
+    }
+    if ($('edit-s-class') && result.class && result.class !== 'UNCLEAR') {
+      const opt = [...$('edit-s-class').options].find(o => o.value.toLowerCase() === result.class.toLowerCase());
+      if (opt) { $('edit-s-class').value = opt.value; filled.push('class'); }
+    }
+    if (!filled.length) { show('⚠️ Could not read any fields. Try a clearer, flatter photo.'); return; }
+    show(`✅ Filled: ${filled.join(', ')} — verify before saving.`);
+    setTimeout(() => { if (fb) fb.style.display = 'none'; }, 5000);
+  } catch(e) {
+    show('❌ ' + (e.message || 'Could not read document. Try a clearer photo.'));
   }
 }
 
