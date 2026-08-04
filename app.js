@@ -6161,97 +6161,182 @@ Output ONLY: {"amount":0,"date":"","method":"","payer":"","recipient":"","refere
   }
 }
 
-// ── 3. Student admission form / ID scan ─────────────────────────────────
+// ── Universal student info prompt — reads ANY document format ────────────
+// Tells Groq what DATA to find, not what FORMAT to expect. Handles formal
+// admission forms, handwritten notebook pages, register tables, ID cards,
+// WhatsApp screenshots — all without any format assumptions.
+const _STUDENT_INFO_PROMPT = `You are reading a photograph that contains Nigerian school student information.
+The document could be ANYTHING: a printed admission form, handwritten notebook page, register table, ID card, or WhatsApp screenshot. Do NOT assume a specific layout.
+
+Find and extract these fields from ANYWHERE in the image:
+
+  name         — the student's full name. Nigerian names: Yoruba (Adeoye, Ogunsola, Olatunde, Ilelaboye), Hausa (Musa, Aisha, Abdullahi, Khaleed), Igbo (Emeka, Chioma, Ezekiel). Look under labels like "Name:", "Student:", "Pupil:", or in a table column headed "Names". Written as SURNAME FIRSTNAME or FIRSTNAME SURNAME.
+  parent_phone — a parent/guardian phone number. Nigerian numbers start with 07, 08, or 09 (11 digits total, e.g. 07085369494) or +234. Look near "Phone:", "WhatsApp:", "Tel:", "Parent:", or table column "Phone No".
+  class        — the student's class or grade. Terms: "Basic 4", "JSS 1", "SSS 2", "Nursery 2", "KG", "Primary 3". Look near "Class:", "Form:", "Grade:", or table column "Class".
+  fee          — a Naira fee amount. Look near "Fee:", "Amount:", "School Fee:", "Termly Fee:", ₦ symbol, or table column "Fee". Return as integer only (e.g. 36000 not "₦36,000").
+  dob          — date of birth if visible. Any date format. Return raw text as written.
+
+${_OCR_DISCIPLINE}
+Output ONLY valid JSON: {"name":"","parent_phone":"","class":"","fee":null,"dob":""}`;
+
+// ── Targeted retry prompts — one per field ────────────────────────────────
+// Used when the first scan misses a specific field. Narrower focus = better hit rate.
+function _buildRetryPrompt(fieldKey) {
+  const discipline = `Do NOT guess. If you cannot clearly see it, output UNCLEAR. Output ONLY valid JSON.`;
+  const map = {
+    name:         `Look ONLY for a Nigerian student's full name. Nigerian names: Yoruba (Adeoye, Ogunsola), Hausa (Musa, Aisha), Igbo (Emeka, Chioma). Could be under "Name:", "Student:", or in a column "Names". ${discipline} Output ONLY: {"name":""}`,
+    parent_phone: `Look ONLY for a Nigerian phone number. Starts with 07, 08, or 09 (11 digits, e.g. 07085369494) or +234. Could be near "Phone:", "WhatsApp:", "Tel:", "Parent:", or column "Phone No". ${discipline} Output ONLY: {"parent_phone":""}`,
+    class:        `Look ONLY for a student's class or grade. Nigerian classes: Basic 1-6, Primary 1-6, JSS 1-3, SSS 1-3, Nursery 1-2, KG. Could be near "Class:", "Form:", "Grade:", or column "Class". ${discipline} Output ONLY: {"class":""}`,
+    fee:          `Look ONLY for a school fee amount in Naira. Near "Fee:", "Amount:", "School Fee:", "Termly Fee:", ₦ symbol, or column "Fee". Return as integer only (e.g. 36000). ${discipline} Output ONLY: {"fee":null}`,
+    dob:          `Look ONLY for a date of birth. Near "D.O.B", "Date of Birth", "Born:", "DOB:". Return raw date text exactly as written. ${discipline} Output ONLY: {"dob":""}`,
+  };
+  return map[fieldKey] || '';
+}
+
+// ── Field maps: scan result key → HTML input ID ───────────────────────────
+const _SCAN_MAP_ADD  = { name:'ns-name', parent_phone:'ns-phone', class:'ns-class', fee:'ns-fee', dob:'ns-dob' };
+const _SCAN_MAP_EDIT = { name:'edit-s-name', parent_phone:'edit-s-phone', class:'edit-s-class', fee:'edit-s-fee', dob:'edit-s-dob' };
+
+// ── Fill form inputs from scan result, return what was found vs unclear ───
+function _fillStudentFromResult(result, fieldMap) {
+  const found = [], unclear = [];
+  const r = result || {};
+  const ok = (v) => v && v !== 'UNCLEAR' && v !== null;
+
+  if (fieldMap.name) {
+    if (ok(r.name)) { $(fieldMap.name).value = r.name; found.push('name'); }
+    else unclear.push('name');
+  }
+  if (fieldMap.parent_phone) {
+    if (ok(r.parent_phone)) { $(fieldMap.parent_phone).value = r.parent_phone.replace(/\D/g,''); found.push('phone'); }
+    else unclear.push('phone');
+  }
+  if (fieldMap.class) {
+    if (ok(r.class)) {
+      const el = $(fieldMap.class);
+      const opt = el ? [...el.options].find(o => o.value.toLowerCase() === r.class.toLowerCase()) : null;
+      if (opt) { el.value = opt.value; found.push('class'); } else unclear.push('class');
+    } else unclear.push('class');
+  }
+  if (fieldMap.fee) {
+    if (ok(r.fee) && Number(r.fee) > 0) { $(fieldMap.fee).value = Number(r.fee); found.push('fee'); }
+    else unclear.push('fee');
+  }
+  if (fieldMap.dob) {
+    if (ok(r.dob)) {
+      const parsed = _parseNigerianDate(r.dob);
+      if (parsed) { $(fieldMap.dob).value = parsed; found.push('dob'); }
+      else unclear.push('dob');
+    } else unclear.push('dob');
+  }
+  return { found, unclear };
+}
+
+// ── Render field-by-field scan feedback with per-field retry buttons ──────
+function _renderScanFeedback(fbEl, found, unclear, fieldMap, fbElId) {
+  if (!fbEl) return;
+  fbEl.style.display = 'block';
+  const labels = { name:'Name', parent_phone:'Phone', class:'Class', fee:'Fee', dob:'DOB' };
+  const mapJson = encodeURIComponent(JSON.stringify(fieldMap));
+  let html = '';
+  if (found.length)
+    html += `<div style="color:#22c55e;font-size:0.76rem;margin-bottom:0.25rem;">✅ Filled: ${found.join(', ')}</div>`;
+  if (unclear.length) {
+    html += `<div style="font-size:0.76rem;color:#f59e0b;margin-bottom:0.15rem;">⚠️ Not found — retry or type manually:</div>`;
+    unclear.forEach(f => {
+      const key = f === 'phone' ? 'parent_phone' : f;
+      html += `<div style="display:flex;align-items:center;gap:0.35rem;margin-bottom:0.2rem;">
+        <span style="font-size:0.75rem;color:var(--sub);min-width:40px;">${labels[key]||f}</span>
+        <button onclick="_triggerRetryField('${key}','${mapJson}','${fbElId}')"
+          style="font-size:0.68rem;padding:2px 8px;border-radius:5px;background:rgba(124,58,237,0.15);border:1px solid rgba(124,58,237,0.35);color:#a78bfa;cursor:pointer;">📷 Retry</button>
+      </div>`;
+    });
+  }
+  if (!found.length && !unclear.length)
+    html = '<span style="color:var(--danger);font-size:0.76rem;">❌ Nothing found. Try a clearer, flatter photo.</span>';
+  fbEl.innerHTML = html;
+}
+
+// ── Trigger a targeted retry scan for one missing field ───────────────────
+function _triggerRetryField(fieldKey, mapJson, fbElId) {
+  let inp = document.getElementById('_retry-field-input');
+  if (!inp) {
+    inp = document.createElement('input');
+    inp.type = 'file'; inp.accept = 'image/*';
+    inp.id = '_retry-field-input'; inp.style.display = 'none';
+    document.body.appendChild(inp);
+  }
+  inp.value = '';
+  inp.onchange = (e) => _doRetryField(e, fieldKey, mapJson, fbElId);
+  inp.click();
+}
+
+async function _doRetryField(event, fieldKey, mapJson, fbElId) {
+  const file = event.target.files[0]; if (!file) return;
+  const fb = document.getElementById(fbElId);
+  const note = m => { if (fb) fb.innerHTML += `<div style="font-size:0.75rem;color:var(--sub);margin-top:0.2rem;">${m}</div>`; };
+  note('📸 Scanning for ' + fieldKey + '...');
+  try {
+    const resized = await _resizeFeeImage(file, 1200);
+    const key = await _getFeeGroqKey(); if (!key) { note('❌ Groq key not found.'); return; }
+    const prompt = _buildRetryPrompt(fieldKey); if (!prompt) { note('❌ Unknown field.'); return; }
+    const result = await _callGroqGenericVision(key, resized.base64, resized.mimeType, prompt, 150);
+    const fieldMap = JSON.parse(decodeURIComponent(mapJson));
+    const value = result[fieldKey];
+    const el = fieldMap[fieldKey] ? $(fieldMap[fieldKey]) : null;
+    if (!value || value === 'UNCLEAR' || !el) {
+      note(`<span style="color:#f59e0b;">Still couldn't read ${fieldKey} — please type it manually.</span>`);
+      return;
+    }
+    if (fieldKey === 'parent_phone') el.value = value.replace(/\D/g,'');
+    else if (fieldKey === 'fee') { if (Number(value) > 0) el.value = Number(value); }
+    else if (fieldKey === 'dob') { const p = _parseNigerianDate(value); if (p) el.value = p; }
+    else if (fieldKey === 'class') {
+      const opt = [...el.options].find(o => o.value.toLowerCase() === value.toLowerCase());
+      if (opt) el.value = opt.value;
+    }
+    else el.value = value;
+    note(`<span style="color:#22c55e;">✅ ${fieldKey} filled!</span>`);
+  } catch(e) { note('❌ Retry failed — try typing manually.'); }
+}
+
+// ── 3. Student admission scan — universal, any document format ────────────
 async function scanStudentForm(event) {
   if (!_isPremium()) { _gateScan('ns'); return; }
   const file = event.target.files[0]; if (!file) return;
   event.target.value = '';
   const fb = document.getElementById('ns-scan-fb');
-  const show = m => { if (fb) { fb.style.display = 'block'; fb.textContent = m; } };
-  if (!navigator.onLine) { show('❌ No internet connection.'); return; }
-  show('📸 Reading admission form...');
-  try {
-    const resized = await _resizeFeeImage(file, 1200);
-    const key = await _getFeeGroqKey();
-    if (!key) { show('❌ Groq key not found — ask Bayo to add it in portal settings.'); return; }
-    const prompt = `You are reading a photograph of a Nigerian school student record. This could be:
-- A formal admission form or student ID card
-- A handwritten notebook or register page with student details
-- A simple handwritten list or table with columns like Names, Phone, Class, Fee
-
-Extract ALL of the following fields if visible anywhere in the image:
-  name         = the student's full name (text, Nigerian names — Yoruba, Hausa, Igbo)
-  parent_phone = a parent/guardian WhatsApp or phone number (digits only, no spaces or dashes)
-  class        = the class/grade (text, e.g. "Basic 4", "JSS 1", "Nursery 2", "KG")
-  fee          = the school fee amount for this student (integer, Naira only, no symbol — e.g. 36000)
-  dob          = date of birth if visible (raw text as written)
-
-IMPORTANT: If the image shows a TABLE or LIST with column headers like "Names", "Phone No", "Class", "Fee" — read the first data row as the student's details.
-${_OCR_DISCIPLINE}
-Output ONLY: {"name":"","parent_phone":"","class":"","fee":null,"dob":""}`;
-    const result = await _callGroqGenericVision(key, resized.base64, resized.mimeType, prompt, 400);
-    if (fb) fb.style.display = 'none';
-    if ($('ns-name') && result.name && result.name !== 'UNCLEAR') $('ns-name').value = result.name;
-    if ($('ns-phone') && result.parent_phone && result.parent_phone !== 'UNCLEAR') $('ns-phone').value = result.parent_phone.replace(/\D/g,'');
-    if ($('ns-class') && result.class && result.class !== 'UNCLEAR') {
-      const opt = [...$('ns-class').options].find(o => o.value.toLowerCase() === result.class.toLowerCase());
-      if (opt) $('ns-class').value = opt.value;
-    }
-    if ($('ns-fee') && result.fee && result.fee !== 'UNCLEAR' && Number(result.fee) > 0) $('ns-fee').value = Number(result.fee);
-    if ($('ns-dob') && result.dob && result.dob !== 'UNCLEAR') {
-      const parsed = _parseNigerianDate(result.dob);
-      if (parsed) $('ns-dob').value = parsed;
-    }
-    const filled = ['name','parent_phone','class','fee'].filter(f => result[f] && result[f] !== 'UNCLEAR' && result[f] !== null);
-    show(`✅ Filled: ${filled.join(', ')} — verify before saving.`);
-    setTimeout(() => { if (fb) fb.style.display = 'none'; }, 5000);
-  } catch(e) {
-    show('❌ ' + (e.message || 'Could not read form. Try a clearer photo.'));
-  }
-}
-
-// ── 3b. Scan to fill missing fields on existing student (Edit modal) ────
-async function scanStudentFormEdit(idx, event) {
-  if (!_isPremium()) { _gateScan('ns'); return; }
-  const file = event.target.files[0]; if (!file) return;
-  event.target.value = '';
-  const fb = document.getElementById('edit-scan-fb');
-  const show = m => { if (fb) { fb.style.display = 'block'; fb.textContent = m; } };
+  const show = m => { if (fb) { fb.style.display = 'block'; fb.innerHTML = `<span style="font-size:0.76rem;color:var(--sub);">${m}</span>`; } };
   if (!navigator.onLine) { show('❌ No internet connection.'); return; }
   show('📸 Reading document...');
   try {
     const resized = await _resizeFeeImage(file, 1200);
     const key = await _getFeeGroqKey();
     if (!key) { show('❌ Groq key not found — ask Bayo to add it in portal settings.'); return; }
-    const prompt = `You are reading a photograph of a Nigerian school student record. This could be a formal admission form, student ID card, or a handwritten notebook/register page.
-Extract ALL of the following fields if visible:
-  name         = the student's full name (Nigerian names)
-  parent_phone = a parent/guardian WhatsApp or phone number (digits only)
-  class        = the class/grade (e.g. "Basic 4", "JSS 1", "Nursery 2")
-  fee          = the school fee amount (integer, Naira only, no symbol)
-  dob          = date of birth if visible (raw text as written)
-If the image shows a TABLE with columns like "Names", "Phone No", "Class", "Fee" — read the first data row.
-${_OCR_DISCIPLINE}
-Output ONLY: {"name":"","parent_phone":"","class":"","fee":null,"dob":""}`;
-    const result = await _callGroqGenericVision(key, resized.base64, resized.mimeType, prompt, 400);
-    if (fb) fb.style.display = 'none';
-    const filled = [];
-    // Only fill fields that are currently empty or placeholder
-    const nameEl = $('edit-s-name'), phoneEl = $('edit-s-phone'), feeEl = $('edit-s-fee'), dobEl = $('edit-s-dob');
-    if (nameEl && result.name && result.name !== 'UNCLEAR') { nameEl.value = result.name; filled.push('name'); }
-    if (phoneEl && result.parent_phone && result.parent_phone !== 'UNCLEAR') { phoneEl.value = result.parent_phone.replace(/\D/g,''); filled.push('phone'); }
-    if (feeEl && result.fee && result.fee !== 'UNCLEAR' && Number(result.fee) > 0) { feeEl.value = Number(result.fee); filled.push('fee'); }
-    if (dobEl && result.dob && result.dob !== 'UNCLEAR') {
-      const parsed = _parseNigerianDate(result.dob);
-      if (parsed) { dobEl.value = parsed; filled.push('dob'); }
-    }
-    if ($('edit-s-class') && result.class && result.class !== 'UNCLEAR') {
-      const opt = [...$('edit-s-class').options].find(o => o.value.toLowerCase() === result.class.toLowerCase());
-      if (opt) { $('edit-s-class').value = opt.value; filled.push('class'); }
-    }
-    if (!filled.length) { show('⚠️ Could not read any fields. Try a clearer, flatter photo.'); return; }
-    show(`✅ Filled: ${filled.join(', ')} — verify before saving.`);
-    setTimeout(() => { if (fb) fb.style.display = 'none'; }, 5000);
+    const result = await _callGroqGenericVision(key, resized.base64, resized.mimeType, _STUDENT_INFO_PROMPT, 400);
+    const { found, unclear } = _fillStudentFromResult(result, _SCAN_MAP_ADD);
+    _renderScanFeedback(fb, found, unclear, _SCAN_MAP_ADD, 'ns-scan-fb');
+  } catch(e) {
+    show('❌ ' + (e.message || 'Could not read document. Try a clearer photo.'));
+  }
+}
+
+// ── 3b. Scan to fill missing fields on existing student (Edit modal) ─────
+async function scanStudentFormEdit(idx, event) {
+  if (!_isPremium()) { _gateScan('ns'); return; }
+  const file = event.target.files[0]; if (!file) return;
+  event.target.value = '';
+  const fb = document.getElementById('edit-scan-fb');
+  const show = m => { if (fb) { fb.style.display = 'block'; fb.innerHTML = `<span style="font-size:0.76rem;color:var(--sub);">${m}</span>`; } };
+  if (!navigator.onLine) { show('❌ No internet connection.'); return; }
+  show('📸 Reading document...');
+  try {
+    const resized = await _resizeFeeImage(file, 1200);
+    const key = await _getFeeGroqKey();
+    if (!key) { show('❌ Groq key not found — ask Bayo to add it in portal settings.'); return; }
+    const result = await _callGroqGenericVision(key, resized.base64, resized.mimeType, _STUDENT_INFO_PROMPT, 400);
+    const { found, unclear } = _fillStudentFromResult(result, _SCAN_MAP_EDIT);
+    _renderScanFeedback(fb, found, unclear, _SCAN_MAP_EDIT, 'edit-scan-fb');
   } catch(e) {
     show('❌ ' + (e.message || 'Could not read document. Try a clearer photo.'));
   }
