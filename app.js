@@ -743,7 +743,7 @@ const SQ = {
     const items = [...this.q];
     for (const item of items) {
       try {
-        await db.collection('v2_schools').doc(schoolId).set({ [item.key]: item.data }, { merge: true });
+        await db.collection('schools').doc(schoolId).set({ [item.key]: item.data }, { merge: true });
         this.q = this.q.filter(x => x.id !== item.id);
       } catch (e) {
         item.tries++;
@@ -756,7 +756,7 @@ const SQ = {
   async silentPull() {
     if (window._demoMode || !db || !schoolId) return;
     try {
-      const doc = await db.collection('v2_schools').doc(schoolId).get();
+      const doc = await db.collection('schools').doc(schoolId).get();
       if (!doc.exists) return;
       const d = doc.data();
       const pendingKeys = new Set(this.q.map(x => x.key));
@@ -1042,22 +1042,16 @@ async function doStaffLogin() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// PHASE 1 + 2 — new data model, built dual-write alongside the existing
-// flat structure. Nothing existing is removed or rewired yet — this is
-// additive, so nothing that currently works can break by adding it.
+// DATA MODEL — subcollection structure (the ONLY data store for this app)
 //
-// New shape:
-//   schools/{id}/students/{studentId}                    → profile only (name, class, phone, attendance, swot)
-//   schools/{id}/students/{studentId}/private/fees        → totalFee, paid, paymentHistory (Principal/Bursar only, once rules are live)
-//   schools/{id}/students/{studentId}/scores/{term_subject} → ca1/ca2/ca3/exam, one doc per subject per term
-//   schools/{id}/staff_directory/{uid}                     → real Firebase Auth UID as the key, role, assignedClass, assignedSubjects
+//   schools/{id}/students/{studentId}                      → profile (name, class, phone)
+//   schools/{id}/students/{studentId}/private/fees         → totalFee, paid, paymentHistory
+//   schools/{id}/students/{studentId}/scores/{term_sub}    → ca1/ca2/ca3/exam per subject per term
+//   schools/{id}/staff_directory/{uid}                     → Firebase Auth UID, role, assignedClass, assignedSubjects
 //
-// Firestore rules for this shape are drafted (not yet published) — see
-// bloom-school-v2 README, "Phase 3" section, for the exact rule text and
-// the reasoning behind the per-subject score-document split.
-//
-// Score doc IDs use `Term1_Mathematics` style (spaces stripped) so they're
-// valid Firestore doc IDs and stay human-readable in the console.
+// Score doc IDs: "Term1_Mathematics" style — spaces stripped, human-readable.
+// Firestore security rules are drafted in the README (Phase 3) — publish
+// after real-device testing is confirmed passing.
 // ═══════════════════════════════════════════════════════════════════════
 
 function _scoreDocId(term, subject) {
@@ -1148,30 +1142,14 @@ async function loadStaffDirectoryV2(schoolId) {
   return snap.docs.map(doc => ({ uid: doc.id, ...doc.data() }));
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-// PHASE 4 — migration + read-path bridge
-//
-// Read-path strategy: rather than rewriting every render/scorecard/report-
-// card function to be async-Firestore-aware (a much bigger, riskier
-// rewrite touching dozens of functions), this hydrates the OLD in-memory
-// shape (SD.students array, SD.scores[term][sid][subject]) FROM the new
-// V2 structure at load time. Every existing render function keeps working
-// completely unchanged — they still see the same shapes they always did.
-// The dual-write on save (Phase 1+2) keeps V2 current; this hydration
-// keeps the in-memory old-shape current on load. Once this is proven
-// solid, the flat `school.students`/`school.scores` fields on the parent
-// doc become redundant and can eventually be dropped — not done yet.
-// ═══════════════════════════════════════════════════════════════════════
-
-// ── Read-path bridge: V2 Firestore → old in-memory shape ─────────────────
-// Call after loadSchoolIntoSD(). If the school has no V2 data yet (never
-// migrated), this is a safe no-op and the old flat data already loaded
-// by loadSchoolIntoSD stays exactly as-is.
+// ── Read path: subcollections → in-memory shape ───────────────────────────
+// Loads all students, fees, and scores from the subcollection structure into
+// the SD in-memory shape that all render functions already understand.
+// Called on every login. Empty subcollections = new school with no students yet.
 async function hydrateFromV2(schoolId) {
   if (!schoolId || SD.config?._demo) return;
   try {
     const v2Students = await loadAllStudentsV2(schoolId);
-    if (!v2Students.length) return; // nothing migrated yet — old flat data stands as-is
 
     const students = [];
     const scores = {};
@@ -1199,46 +1177,9 @@ async function hydrateFromV2(schoolId) {
   }
 }
 
-// ── One-time migration: old flat data → new V2 structure ─────────────────
-// Safe to re-run — skips any student that already has a _v2Id (already migrated).
-// Run manually (e.g. a Settings button, or paste `migrateStudentsToV2(schoolId)`
-// into DevTools console) — not automatic on login, since it's a real write
-// operation that should happen deliberately, once, per school.
-async function migrateStudentsToV2(schoolId) {
-  if (!schoolId) { console.error('No schoolId'); return; }
-  let migrated = 0, skipped = 0;
-  for (let i = 0; i < SD.students.length; i++) {
-    const s = SD.students[i];
-    if (s._v2Id) { skipped++; continue; }
-    try {
-      const v2Id = await saveStudentProfileV2(schoolId, s);
-      await saveStudentFeesV2(schoolId, v2Id, {
-        totalFee: s.totalFee || 0, paid: s.paid || 0, paymentHistory: s.paymentHistory || []
-      });
-      const sid = s.id || i; // matches the sid convention already used throughout the old code
-      for (const term of Object.keys(SD.scores || {})) {
-        const subjMap = SD.scores[term]?.[sid];
-        if (!subjMap) continue;
-        for (const subject of Object.keys(subjMap)) {
-          await saveScoreV2(schoolId, v2Id, term, subject, subjMap[subject]);
-        }
-      }
-      s._v2Id = v2Id;
-      migrated++;
-    } catch (e) {
-      console.error('Migration failed for student', s.name, e.message);
-    }
-  }
-  saveLocal('students', SD.students);
-  console.log(`✅ Migration done: ${migrated} migrated, ${skipped} already had a V2 record.`);
-  return { migrated, skipped };
-}
-
-// ── Staff account claim — since existing passwords are hashed and can't be
-// reversed, each existing staff member sets a NEW password once, which
-// creates their real Firebase Auth account and links it via staff_directory.
-// This does NOT touch their existing legacy login — that keeps working
-// until every staff member has claimed their real account.
+// ── Staff account claim — staff member sets a password once, which creates
+// their real Firebase Auth account and links it via staff_directory.
+// Their legacy password login continues to work as a fallback.
 async function claimStaffAccountV2(schoolId, email, newPassword) {
   const normEmail = (email || '').trim().toLowerCase();
   const staffRecord = (SD.staff || []).find(s => (s.email || '').trim().toLowerCase() === normEmail);
@@ -1254,15 +1195,6 @@ async function claimStaffAccountV2(schoolId, email, newPassword) {
   return uid;
 }
 
-// ── Simple UI triggers — usable right now without any new HTML markup.
-// Wire to a real button later; for now callable from a console or any
-// onclick="..." you want to attach.
-function runMigrationUI() {
-  if (!confirm(`Migrate all ${SD.students.length} students to the new per-student data structure? Safe to run more than once — already-migrated students are skipped.`)) return;
-  migrateStudentsToV2(schoolId).then(({migrated, skipped}) => {
-    alert(`✅ Migration complete.\n${migrated} students migrated.\n${skipped} already had a record (skipped).`);
-  }).catch(e => alert('Migration failed: ' + e.message));
-}
 function claimAccountUI() {
   const errEl = $('claim-err'); if (errEl) errEl.style.display = 'none';
   if ($('claim-email')) $('claim-email').value = '';
@@ -1463,7 +1395,7 @@ async function doLogin() {
     let school = null;
     if (db) {
       try {
-        const doc = await db.collection('v2_schools').doc(sid).get();
+        const doc = await db.collection('schools').doc(sid).get();
         if (doc.exists) { school = doc.data(); console.log('✅ Found in Firestore schools'); }
       } catch (e) { console.warn('Firestore read failed:', e.message); }
     }
@@ -1479,7 +1411,7 @@ async function doLogin() {
             students: [], expenses: [], attendance: {}, sports: { teams:{}, custom:[] }, arts: { gallery:[] },
             music: { practiceLogs:[], instruments:[] }, health: [], alumni: [], socialPages: [], commsLog: [], opportunities: [], scores: {}, affective: {}
           };
-          try { await db.collection('v2_schools').doc(sid).set(school, { merge: true }); } catch (e2) {}
+          try { await db.collection('schools').doc(sid).set(school, { merge: true }); } catch (e2) {}
         }
       } catch (e) { console.warn('admin_approved_schools check failed:', e.message); }
     }
@@ -1625,7 +1557,7 @@ function checkTierStatus() {
     cfg._lastReportedCount = count;
     SQ.push('config', cfg);
     if (db && sid && !cfg._demo) {
-      db.collection('v2_schools').doc(sid).update({ 'config.studentCount': count, 'config._lastReportedCount': count }).catch(e => console.warn('studentCount sync:', e));
+      db.collection('schools').doc(sid).update({ 'config.studentCount': count, 'config._lastReportedCount': count }).catch(e => console.warn('studentCount sync:', e));
     }
   }
 
@@ -1646,7 +1578,7 @@ function checkTierStatus() {
     cfg.tierExceededNewTier = newTier;
     SQ.push('config', cfg);
     if (db && sid && !cfg._demo) {
-      db.collection('v2_schools').doc(sid).update({
+      db.collection('schools').doc(sid).update({
         'config.tierExceededAt': cfg.tierExceededAt,
         'config.tierExceededNewTier': cfg.tierExceededNewTier,
         'config.studentCount': count
@@ -2010,15 +1942,14 @@ async function addStudent() {
   if (!name || !phone) return alert('Name and phone required.');
   const newStudent = { name, phone, class: cls, totalFee: fee, paid: 0, scores: {}, swot: {}, dob };
   SD.students.push(newStudent);
-  await SQ.push('students', SD.students); checkTierStatus();
   if (schoolId && !SD.config?._demo) {
-    saveStudentProfileV2(schoolId, newStudent)
-      .then(v2Id => {
-        newStudent._v2Id = v2Id; // link the in-memory record to its V2 doc for later dual-writes
-        return saveStudentFeesV2(schoolId, v2Id, { totalFee: fee, paid: 0, paymentHistory: [] });
-      })
-      .catch(e => console.warn('V2 dual-write (addStudent) failed:', e.message));
+    try {
+      const v2Id = await saveStudentProfileV2(schoolId, newStudent);
+      newStudent._v2Id = v2Id;
+      await saveStudentFeesV2(schoolId, v2Id, { totalFee: fee, paid: 0, paymentHistory: [] });
+    } catch (e) { console.warn('addStudent write failed:', e.message); }
   }
+  await SQ.push('students', SD.students); checkTierStatus();
   closeM('add-student-modal');
   $('ns-name').value=''; $('ns-phone').value=''; $('ns-class').value=''; $('ns-fee').value='';
   if ($('ns-dob')) $('ns-dob').value = '';
@@ -2029,10 +1960,10 @@ async function deleteStudent(idx) {
   if (!confirm(`Delete ${SD.students[idx]?.name}?`)) return;
   const v2Id = SD.students[idx]?._v2Id;
   SD.students.splice(idx, 1);
-  await SQ.push('students', SD.students); checkTierStatus();
   if (schoolId && v2Id && !SD.config?._demo) {
-    deleteStudentV2(schoolId, v2Id).catch(e => console.warn('V2 dual-write (deleteStudent) failed:', e.message));
+    try { await deleteStudentV2(schoolId, v2Id); } catch (e) { console.warn('deleteStudent write failed:', e.message); }
   }
+  await SQ.push('students', SD.students); checkTierStatus();
   closeM('student-modal'); renderStudentList(); renderBanner();
 }
 
@@ -2659,15 +2590,17 @@ async function recordPayment(idx) {
   SD.students[idx].paid = (SD.students[idx].paid || 0) + amt;
   if (!SD.students[idx].paymentHistory) SD.students[idx].paymentHistory = [];
   SD.students[idx].paymentHistory.unshift({ amount: amt, method: $('pay-method')?.value || 'Cash', date: $('pay-date')?.value || new Date().toISOString().split('T')[0], by: userRole });
-  await SQ.push('students', SD.students); checkTierStatus();
   const v2Id = SD.students[idx]?._v2Id;
   if (schoolId && v2Id && !SD.config?._demo) {
-    saveStudentFeesV2(schoolId, v2Id, {
-      totalFee: SD.students[idx].totalFee || 0,
-      paid: SD.students[idx].paid,
-      paymentHistory: SD.students[idx].paymentHistory
-    }).catch(e => console.warn('V2 dual-write (recordPayment) failed:', e.message));
+    try {
+      await saveStudentFeesV2(schoolId, v2Id, {
+        totalFee: SD.students[idx].totalFee || 0,
+        paid: SD.students[idx].paid,
+        paymentHistory: SD.students[idx].paymentHistory
+      });
+    } catch (e) { console.warn('recordPayment write failed:', e.message); }
   }
+  await SQ.push('students', SD.students); checkTierStatus();
   if ($('pay-amt')) $('pay-amt').value = '';
   renderTab('fees'); renderBanner(); renderRevenue();
   alert(`✅ ${fmt(amt)} recorded for ${SD.students[idx].name}`);
@@ -2862,10 +2795,10 @@ async function savePromotionDecision(idx) {
     decidedBy: currentStaff?.name || userRole,
     decidedAt: new Date().toISOString()
   };
-  await SQ.push('students', SD.students);
   if (schoolId && s._v2Id && !SD.config?._demo) {
-    saveStudentProfileV2(schoolId, s).catch(e => console.warn('V2 dual-write (promotion) failed:', e.message));
+    try { await saveStudentProfileV2(schoolId, s); } catch (e) { console.warn('promotion write failed:', e.message); }
   }
+  await SQ.push('students', SD.students);
   toast('✅ Promotion decision saved');
   renderTab('promotion');
 }
@@ -3033,20 +2966,21 @@ function updateAffective(idx, term, key, val) {
   renderTab('scores');
 }
 
-function saveScores(idx) {
+async function saveScores(idx) {
   saveLocal('scores', SD.scores);
   SQ.push('scores', SD.scores);
   const v2Id = SD.students[idx]?._v2Id;
   const sid = SD.students[idx]?.id || idx;
   if (schoolId && v2Id && !SD.config?._demo) {
+    const writes = [];
     Object.keys(SD.scores).forEach(term => {
       const subjMap = SD.scores[term]?.[sid];
       if (!subjMap) return;
       Object.keys(subjMap).forEach(subject => {
-        saveScoreV2(schoolId, v2Id, term, subject, subjMap[subject])
-          .catch(e => console.warn('V2 dual-write (saveScores) failed:', term, subject, e.message));
+        writes.push(saveScoreV2(schoolId, v2Id, term, subject, subjMap[subject]));
       });
     });
+    try { await Promise.all(writes); } catch (e) { console.warn('saveScores write failed:', e.message); }
   }
   toast('✅ Scores saved!');
 }
@@ -3949,12 +3883,13 @@ async function addStaff() {
   if (!SD.staff) SD.staff = [];
     const hashedPwd = await _hashPassword(pwd);
   SD.staff.push({ name, email, password: hashedPwd, role, assignedClass: assignedClass||null, assignedSubjects });
-  await SQ.push('staff', SD.staff);
   if (schoolId && !SD.config?._demo) {
-    createStaffAccountV2(schoolId, email, pwd, { name, role, assignedClass: assignedClass||null, assignedSubjects })
-      .then(uid => { SD.staff[SD.staff.length-1]._v2Uid = uid; })
-      .catch(e => console.warn('V2 dual-write (addStaff) failed — real auth account NOT created, legacy login still works:', e.message));
+    try {
+      const uid = await createStaffAccountV2(schoolId, email, pwd, { name, role, assignedClass: assignedClass||null, assignedSubjects });
+      SD.staff[SD.staff.length-1]._v2Uid = uid;
+    } catch (e) { console.warn('addStaff Firebase Auth failed — legacy login still works:', e.message); }
   }
+  await SQ.push('staff', SD.staff);
   closeM('add-staff-modal');
   $('sf-name').value=''; $('sf-email').value=''; $('sf-pwd').value='';
   const sfc=$('sf-class'); if(sfc) sfc.value='';
@@ -5947,7 +5882,7 @@ async function refreshPlanFromFirestore(btn) {
   const sid=schoolId||SD.config?._schoolId;
   if(!sid||!db){ if(btn){ btn.textContent='❌ Not connected'; btn.disabled=false; } return; }
   try{
-    const snap=await db.collection('v2_schools').doc(sid).get();
+    const snap=await db.collection('schools').doc(sid).get();
     if(snap.exists){
       const cfg=snap.data().config||{};
       SD.config=Object.assign({},SD.config,cfg);
