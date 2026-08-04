@@ -589,3 +589,103 @@ See `report-card-test-data-README.md` for the full test data set:
 - ⚠️ overflow flag confirmed via `_capScoreEntry().hasOverflow` for edges 4 & 6 ✅
 
 **Status: v2 stress tests PASSED. Ready to port to production v1 when approved.**
+
+---
+
+## Session Log — 2026-08-04
+
+### Infrastructure cleanup (all apps)
+
+**Firebase API key consolidated**
+All four apps (`school-bloom`, `bloom-school-v2`, `bloom-portal`, `bloom-agent`) previously had two different Firebase web app registrations pointing at the same `educationbloom-699ed` project. `bloom-portal` and `bloom-school-v2` were using a second registration (`appId: 0f9d338f`). Both were reverted to the original single registration (`appId: 2b3da887`, `apiKey: AIzaSyCVEdunn3AZndDP5Rm1Z3Kv1e6G6W2mB_o`). One project, one registration, four apps.
+
+**Firestore collection rename — `v2_schools` → `schools` (all apps)**
+- `bloom-school-v2` — renamed as part of Step 1 (7 occurrences)
+- `school-bloom` (v1 production) — renamed separately (7 occurrences). Was causing a bootstrap detour on first login because the portal writes to `schools` but v1 was reading from `v2_schools`.
+- `bloom-portal` already used `schools` ✅
+- All four apps now read/write the same collection. Safe to do now — no real school data exists yet.
+
+---
+
+### Step 1 — bloom-school-v2 sandbox cleanup (COMPLETE)
+
+**Migration machinery removed**
+- `migrateStudentsToV2()` function — deleted entirely
+- `runMigrationUI()` function — deleted entirely
+- `📦 Migrate Students to New Structure` button removed from Settings in `index.html`
+- Dual-write `.catch()` fire-and-forget calls removed from `addStudent`, `deleteStudent`, `recordPayment`, `saveScores`, `addStaff`, and promotion save
+- Phase 1+2 and Phase 4 block comment headers replaced with a single clean `DATA MODEL` comment
+
+**V2 subcollections are now the sole data store**
+- All mutation functions now `await` the subcollection writes as primary calls (not optional secondaries)
+- `hydrateFromV2()` is the only read path on login. The `if (!v2Students.length) return` guard removed — empty subcollection now means new school with no students, not "fall back to flat data"
+- `claimStaffAccountV2`, `claimAccountUI`, `submitClaimAccount` — kept, still needed for staff Firebase Auth claim flow
+- `staffLoginV2` remains the primary login path; legacy password hash is the fallback
+
+**Settings section cleaned**
+- Section heading: `🔐 Data & Account Setup (Phase 1–4)` → `🔑 Staff Account Setup`
+- Only the Claim Account button remains
+
+---
+
+### Step 2 — Real-device testing (IN PROGRESS)
+
+Testing performed on Android phone (Brave browser) at `kobomoba.github.io/bloom-school-v2/`.
+
+**Bugs found and fixed during testing:**
+
+**1. Student scan — wrong document type handling**
+`Scan Admission Form/ID` failed with "Could not parse response" when photographed against a handwritten notebook page (Names | Phone No | Class | Fee columns). Root cause: the prompt assumed a formal admission form/ID card format. Groq returned explanation text instead of JSON.
+
+Fix: Replaced all student scan prompts with a single `_STUDENT_INFO_PROMPT` constant that describes what DATA to find (Nigerian name, phone, class, fee, DOB) rather than what FORMAT to expect. Works with any document type.
+
+**2. Fee not extracted from scan**
+The old prompt extracted `name, parent_phone, class, dob` — no `fee` field. A fee visible on the paper (e.g. ₦36,000) would never reach the `ns-fee` input. Fixed: `fee` is now part of the universal prompt and is wired to `ns-fee`.
+
+**3. No scan on student profile page**
+After creating a student, there was no way to scan and fill in missing fields (e.g. phone or fee that was missed). Fixed: `📷 Scan to Fill Missing Fields` button added to the Edit Student modal, wired to `scanStudentFormEdit()`.
+
+**4. Fee Register scan description unclear**
+The `Scan Physical Fee Register` button in the Fees tab is for a multi-column fee ledger (S/N, Names, Balance B/F, Term Fee, Payment installments). Description updated to make this clear and redirect simple student lists to `Add Student` instead.
+
+**5. CSV upload format undocumented**
+The `Upload Bank Statement CSV` result showed "1625 not found" because the format wasn't documented. A hint now shows: CSV needs `StudentName` and `Amount` columns, names must match exactly as registered.
+
+**Universal OCR prompt + per-field retry system (architectural fix)**
+
+Problem identified: schools have wildly different document formats. Maintaining separate prompts per school format is a maintenance nightmare.
+
+Solution implemented — two parts:
+
+**`_STUDENT_INFO_PROMPT`** — one universal constant that reads any format. Tells Groq what the DATA means (Nigerian name patterns, phone number format, Naira amounts, class terminology) not where to find it. Handles formal forms, handwritten lists, register tables, ID cards.
+
+**Per-field retry** — after a scan, instead of a generic pass/fail:
+- `✅ Filled: name, class` — what was found
+- `⚠️ Phone [📷 Retry]` — each missing field gets its own retry button
+- Tapping retry opens a new photo picker and sends a targeted single-field prompt (e.g. "Look ONLY for a Nigerian phone number") — much higher hit rate on a focused second pass
+- Shared hidden `_retry-field-input` element, created once, handler swapped per retry
+
+New functions added:
+- `_STUDENT_INFO_PROMPT` — universal prompt constant
+- `_buildRetryPrompt(fieldKey)` — targeted prompt per field
+- `_SCAN_MAP_ADD` / `_SCAN_MAP_EDIT` — field key → input ID maps
+- `_fillStudentFromResult(result, fieldMap)` — shared fill helper, returns `{found, unclear}`
+- `_renderScanFeedback(fb, found, unclear, fieldMap, fbElId)` — renders field-by-field result with retry buttons
+- `_triggerRetryField(fieldKey, mapJson, fbElId)` — opens file picker for one field
+- `_doRetryField(event, fieldKey, mapJson, fbElId)` — executes the targeted retry scan
+
+Both `scanStudentForm` (Add modal) and `scanStudentFormEdit` (Edit modal) now use the same shared system.
+
+---
+
+### Pending — Step 2 remaining tests
+
+- [ ] Add student → verify subcollection documents created in Firestore console
+- [ ] Enter scores → verify `scores/Term1_Mathematics` subcollection
+- [ ] Record payment → verify `private/fees` subcollection updated
+- [ ] Log out and log back in → confirm `hydrateFromV2` rebuilds all data from subcollections (not localStorage)
+- [ ] Add staff → claim account → log in as staff with claimed password
+- [ ] Delete student → verify cascade delete (profile + fees + scores all gone)
+- [ ] Re-test student scan with updated universal prompt
+
+Once all pass → Step 3 (Bayo publishes Firestore security rules) → Step 4 (port to v1 production).
