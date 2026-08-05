@@ -786,3 +786,12 @@ Once all pass → Step 3 (Bayo publishes Firestore security rules) → Step 4 (p
 **Adding document type #11:** one entry in `OCR_SCHEMAS`. No new prompt writing, no discipline rules to copy, no risk of drift.
 
 **Also in this session:** `_callGroqFeeVision` now uses the same system message + brace-matching JSON extraction as `_callGroqGenericVision`, fixing the same parse-failure class that was found during Step 2 device testing.
+
+
+### 2026-08-05 (4) — Critical fix: duplicate declaration broke app load
+
+**Bug:** The OCR Engine v2 insertion used a char-position replacement for `_STUDENT_INFO_PROMPT`. The replacement calculated `idx` correctly but accidentally prepended the new single-line declaration at position 0 of the file in addition to placing it at the correct position (L6429). Result: two `const _STUDENT_INFO_PROMPT` declarations → `SyntaxError: Identifier already declared` → entire app.js failed to load → Enter Portal button (and everything else) became unresponsive.
+
+**Fix:** Removed the rogue prefix at position 0. One declaration remains at L6429. `node --check` now passes clean.
+
+**Lesson:** Any file manipulation using char positions must be followed immediately by a syntax check (`node --check`) before pushing. Added to process going forward.
