@@ -795,3 +795,24 @@ Once all pass → Step 3 (Bayo publishes Firestore security rules) → Step 4 (p
 **Fix:** Bumped to `app.js?v=20260805-ocr-v2`. All devices will now fetch the latest build on next page load.
 
 **Standing rule (now enforced):** Every push that touches `app.js` must also bump the `?v=` parameter in `index.html`. Format: `?v=YYYYMMDD-descriptor`. No exceptions — without this, all device testing is testing old code.
+
+
+### 2026-08-05 (6) — 5-fix build from device testing analysis
+
+**Fix 1 — Image resize 1200→800px (root cause of scan failures)**
+All `_resizeFeeImage(file, 1200)` calls changed to 800. The proven free-tier config for `qwen/qwen3.6-27b` is 800px + 4096 tokens. At 1200px the image exceeded the TPM budget — the model returned prose explanation instead of JSON, which is why all three parse attempts failed and produced the ❌ error.
+
+**Fix 2 — max_tokens aligned to 4096 across all Groq calls**
+`scanStudentForm` and `scanStudentFormEdit` were passing 400 — changed to 4096. `groqVisionOCR` was 600, fee ledger was 4000 — both to 4096. The default in `_callGroqGenericVision` updated to `maxTokens || 4096`. For 5 student fields the response is ~80 tokens, so 4096 eliminates any truncation risk entirely.
+
+**Fix 3 — `groqVisionOCR` wrong Groq parameters**
+`reasoning_effort: 'none'` is an OpenAI parameter — Groq uses `reasoning_format: 'hidden'`. Changed. Also removed `response_format: { type: 'json_object' }` which is OpenAI-only and unsupported by Groq's API.
+
+**Fix 4 — `buildOcrPrompt` tautological filter**
+`.filter(p => p !== '' || p === '').filter(Boolean)` → `.filter(Boolean)`. The first filter was always true for any value of p, stripping blank-line separators between prompt sections and making the generated prompt harder for Groq to read.
+
+**Fix 5 — CSV bank statement detection**
+`handleBulkPayment` now checks the first row's headers for bank statement keywords (narration, reference, debit, credit, value date). If detected, shows a clear explanation of the required format (`StudentName, Amount`) instead of the confusing '1625 not found' message. The 1625 error was because a bank statement CSV has date in col[0] and narration in col[1] — neither matched any student name.
+
+**Lesson: syntax check is not enough**
+`node --check` only catches syntax errors. Runtime errors (wrong API params, TPM budget exceeded, wrong function arguments) require device testing. The analysis that found these 5 issues came from reading memory notes about the proven Groq config — those notes must be the reference point before any OCR-related code change.
