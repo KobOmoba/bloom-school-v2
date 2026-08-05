@@ -521,7 +521,7 @@ function buildOcrPrompt(schemaKey, params) {
     'Return JSON in exactly this shape (no markdown, no extra text):',
     JSON.stringify(schema.outputShape, null, 2)
   ];
-  return parts.filter(p => p !== '' || p === '').filter(Boolean).join('\n');
+  return parts.filter(Boolean).join('\n');
 }
 
 const GROQ_OCR_PROMPT = buildOcrPrompt('student_roster');
@@ -584,9 +584,8 @@ async function groqVisionOCR(base64, mime, _retry) {
           ]
         }],
         temperature: 0.2,
-        max_tokens:  600,
-        reasoning_effort: "none",
-        response_format: { type: "json_object" }
+        max_tokens: 4096,
+        reasoning_format: 'hidden'
       })
     });
     clearTimeout(fetchTimer);
@@ -1926,6 +1925,21 @@ async function handleBulkPayment(e) {
   const r = new FileReader();
   r.onload = async ev => {
     const lines = ev.target.result.split(/\r?\n/).filter(x => x.trim());
+    if (!lines.length) { if ($('bulk-feedback')) $('bulk-feedback').textContent = '❌ Empty file.'; return; }
+
+    // Detect bank statement format — col headers like Date, Narration, Reference, Balance
+    const headerRow = lines[0].toLowerCase();
+    const bankHeaders = ['narration', 'reference', 'transaction', 'debit', 'credit', 'value date'];
+    if (bankHeaders.some(h => headerRow.includes(h))) {
+      if ($('bulk-feedback')) $('bulk-feedback').innerHTML =
+        `❌ This looks like a bank statement export, not a payments CSV.<br>
+         The importer needs a simple 2-column file:<br>
+         <strong>StudentName, Amount</strong><br>
+         e.g. <em>ELIZABETH ADESOHIA, 25000</em><br>
+         Export your bank app's CSV, then manually copy student name + amount into a new spreadsheet and save as CSV.`;
+      return;
+    }
+
     let matched = 0, skipped = 0, noMatch = 0;
     const nameScore = (a, b) => {
       const wa = a.toLowerCase().replace(/[^a-z\s]/g, '').split(/\s+/).filter(Boolean);
@@ -4700,7 +4714,7 @@ async function _groqScoreOCR(b64, mime, prompt){
   let r;
   try {
     r=await fetch('https://api.groq.com/openai/v1/chat/completions',{method:'POST',signal:ctrl.signal,headers:{'Content-Type':'application/json','Authorization':'Bearer '+groqKey},body:JSON.stringify({
-      model: GROQ_OCR_MODEL, temperature:0.2, max_tokens:4000,
+      model: GROQ_OCR_MODEL, temperature:0.2, max_tokens: 4096,
       messages:[{role:'user',content:[{type:'image_url',image_url:{url:'data:'+mime+';base64,'+b64}},{type:'text',text:prompt}]}]
     })});
   } finally { clearTimeout(timer); }
@@ -5953,7 +5967,7 @@ async function scanSubjectList(event) {
   if (!navigator.onLine) { show('❌ No internet connection.'); return; }
   show('📸 Reading subject list...');
   try {
-    const resized = await _resizeFeeImage(file, 1200);
+    const resized = await _resizeFeeImage(file, 800);
     const key = await _getFeeGroqKey();
     if (!key) { show('❌ Groq key not found — ask Bayo to add it in portal settings.'); return; }
     const prompt = `You are reading a photograph of a Nigerian school curriculum sheet, timetable, or list of subject names.
@@ -6165,7 +6179,7 @@ async function handleFeeRegisterPhoto(event) {
 
   show('📸 Resizing image...');
   let resized;
-  try { resized = await _resizeFeeImage(file, 1200); }
+  try { resized = await _resizeFeeImage(file, 800); }
   catch(e) { show('❌ Could not read image: ' + e.message); return; }
 
   show('🔑 Fetching AI key...');
@@ -6240,7 +6254,7 @@ async function _callGroqGenericVision(apiKey, base64, mimeType, userPrompt, maxT
     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
     body: JSON.stringify({
       model: 'qwen/qwen3.6-27b',
-      max_tokens: maxTokens || 800,
+      max_tokens: maxTokens || 4096,
       temperature: 0,
       reasoning_format: 'hidden',
       messages: [
@@ -6526,7 +6540,7 @@ async function _doRetryField(event, fieldKey, mapJson, fbElId) {
   const note = m => { if (fb) fb.innerHTML += `<div style="font-size:0.75rem;color:var(--sub);margin-top:0.2rem;">${m}</div>`; };
   note('📸 Scanning for ' + fieldKey + '...');
   try {
-    const resized = await _resizeFeeImage(file, 1200);
+    const resized = await _resizeFeeImage(file, 800);
     const key = await _getFeeGroqKey(); if (!key) { note('❌ Groq key not found.'); return; }
     const prompt = _buildRetryPrompt(fieldKey); if (!prompt) { note('❌ Unknown field.'); return; }
     const result = await _callGroqGenericVision(key, resized.base64, resized.mimeType, prompt, 150);
@@ -6559,10 +6573,10 @@ async function scanStudentForm(event) {
   if (!navigator.onLine) { show('❌ No internet connection.'); return; }
   show('📸 Reading document...');
   try {
-    const resized = await _resizeFeeImage(file, 1200);
+    const resized = await _resizeFeeImage(file, 800);
     const key = await _getFeeGroqKey();
     if (!key) { show('❌ Groq key not found — ask Bayo to add it in portal settings.'); return; }
-    const result = await _callGroqGenericVision(key, resized.base64, resized.mimeType, _STUDENT_INFO_PROMPT, 400);
+    const result = await _callGroqGenericVision(key, resized.base64, resized.mimeType, _STUDENT_INFO_PROMPT, 4096);
     const { found, unclear } = _fillStudentFromResult(result, _SCAN_MAP_ADD);
     _renderScanFeedback(fb, found, unclear, _SCAN_MAP_ADD, 'ns-scan-fb');
   } catch(e) {
@@ -6580,10 +6594,10 @@ async function scanStudentFormEdit(idx, event) {
   if (!navigator.onLine) { show('❌ No internet connection.'); return; }
   show('📸 Reading document...');
   try {
-    const resized = await _resizeFeeImage(file, 1200);
+    const resized = await _resizeFeeImage(file, 800);
     const key = await _getFeeGroqKey();
     if (!key) { show('❌ Groq key not found — ask Bayo to add it in portal settings.'); return; }
-    const result = await _callGroqGenericVision(key, resized.base64, resized.mimeType, _STUDENT_INFO_PROMPT, 400);
+    const result = await _callGroqGenericVision(key, resized.base64, resized.mimeType, _STUDENT_INFO_PROMPT, 4096);
     const { found, unclear } = _fillStudentFromResult(result, _SCAN_MAP_EDIT);
     _renderScanFeedback(fb, found, unclear, _SCAN_MAP_EDIT, 'edit-scan-fb');
   } catch(e) {
@@ -6603,7 +6617,7 @@ async function scanStaffID(event) {
   if (!navigator.onLine) { show('❌ No internet connection.'); return; }
   show('📸 Reading staff ID/CV...');
   try {
-    const resized = await _resizeFeeImage(file, 1200);
+    const resized = await _resizeFeeImage(file, 800);
     const key = await _getFeeGroqKey();
     if (!key) { show('❌ Groq key not found — ask Bayo to add it in portal settings.'); return; }
     const prompt = `You are reading a photograph of a staff ID card or CV/resume for a Nigerian school employee.
@@ -6615,7 +6629,7 @@ Extract ALL of the following:
 
 ${_OCR_DISCIPLINE}
 Output ONLY: {"name":"","email":"","role":"","phone":""}`;
-    const result = await _callGroqGenericVision(key, resized.base64, resized.mimeType, prompt, 400);
+    const result = await _callGroqGenericVision(key, resized.base64, resized.mimeType, prompt, 4096);
     if (fb) fb.style.display = 'none';
     if ($('sf-name') && result.name && result.name !== 'UNCLEAR') $('sf-name').value = result.name;
     if ($('sf-email') && result.email && result.email !== 'UNCLEAR') $('sf-email').value = result.email;
@@ -6645,7 +6659,7 @@ async function _callGroqFeeVision(apiKey, base64, mimeType) {
     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
     body: JSON.stringify({
       model: 'qwen/qwen3.6-27b',
-      max_tokens: 4000,
+      max_tokens: 4096,
       temperature: 0.1,
       reasoning_format: 'hidden',
       messages: [
