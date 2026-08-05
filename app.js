@@ -1,4 +1,4 @@
-const _STUDENT_INFO_PROMPT = buildOcrPrompt('student_info');// ═══════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════
 // EDUCATIONAL BLOOM — app.js (MERGED: v1 base + v2 extras)
 // Term-based scoring (CA1/CA2/CA3/Exam) is the canonical data model.
 // OCR uses Groq Vision (qwen/qwen3.6-27b) — sole engine, no fallback chain.
