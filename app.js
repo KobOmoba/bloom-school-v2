@@ -1,4 +1,4 @@
-// ═══════════════════════════════════════════════════════════════════════
+const _STUDENT_INFO_PROMPT = buildOcrPrompt('student_info');// ═══════════════════════════════════════════════════════════════════════
 // EDUCATIONAL BLOOM — app.js (MERGED: v1 base + v2 extras)
 // Term-based scoring (CA1/CA2/CA3/Exam) is the canonical data model.
 // OCR uses Groq Vision (qwen/qwen3.6-27b) — sole engine, no fallback chain.
@@ -264,23 +264,267 @@ function getGroqKey() { return window.GROQ_API_KEY || localStorage.getItem(GROQ_
 const GROQ_OCR_MODEL = 'qwen/qwen3.6-27b'; // llama-4-scout deprecated June 17 2026
 let _groqRateLimitedThisSession = false; // once Groq hits an org-wide rate limit, skip it for remaining pages this scan
 
-const GROQ_OCR_PROMPT = `You are reading a Nigerian school attendance/fee register photo.
-Columns: SERIAL NO | SURNAME | FIRST NAME | (other columns — ignore them).
-The image may be at any angle — read it correctly.
+// ═══════════════════════════════════════════════════════════════════════
+// OCR ENGINE v2 — schema-driven, one engine for every document type
+//
+// Every discipline fix, every anti-hallucination rule, and every
+// adaptive-reading improvement lives in ONE place (OCR_CORE_DISCIPLINE).
+// Adding a new document type = one new entry in OCR_SCHEMAS. No new
+// hand-written prompt needed, no risk of discipline rules drifting out
+// of sync between features.
+//
+// Usage: buildOcrPrompt('schema_key')
+//        buildOcrPrompt('schema_key', { subject: 'Mathematics', termNum: '2' })
+// ═══════════════════════════════════════════════════════════════════════
 
-TASK 1: Extract every student name visible. Combine as "SURNAME FIRSTNAME" (all caps).
-TASK 2: Look for a class/form name written anywhere on the page — usually in a header, title, or top corner (e.g. "JSS 2A REGISTER", "BASIC 5 CLASS LIST", "SS1 GOLD", "NURSERY 2"). If found, return it as "detected_class" (all caps, e.g. "JSS 2A"). If no class name is visible anywhere, return "" — do NOT guess.
+const OCR_CORE_DISCIPLINE = [
+  'CORE RULES (apply regardless of document type):',
+  '1. NO HALLUCINATION: Transcribe ONLY what is visibly present. Do not add',
+  '   contextual words, correct spelling, infer missing data, or summarize.',
+  '2. NUMBERS: Read digit by digit, not at a glance. Common handwriting',
+  '   confusions: 7 vs 1 — 0 vs 6 — 4 vs 9 — 5 vs 8 — 3 vs 8.',
+  '3. ILLEGIBLE/UNCERTAIN: If a field is illegible, cropped, or you are not',
+  '   confident, output null for that field — never guess a plausible value.',
+  '   Exception: domain rules for a specific schema may override this for names.',
+  '4. STAMPS & SIGNATURES: Use a bracketed note e.g. [SIGNATURE PRESENT].',
+  '5. Return ONLY valid JSON — no markdown fences, no explanation text,',
+  '   no conversational filler before or after the JSON object.'
+].join('\n');
 
-Nigerian name examples — surnames: OGUNLADE, KASALI, ALAWODE, OYESANWO, OGUNDEYI, ALAO, AKINWANDE, OLAWALE, SHONPE, GBELEKALE, OLIYIDE, KOLANOLE, ADEGUNLE, ADEOYE, LAWAL, AYOMIDE, OBASA, OLATUNDE, ADENIYI, OLOOETU
-Firstnames: GABRIEL, RASAQ, GODWIN, ENOCH, ABIGEAL, KOREDE, MICHEAL, ADEMIDE, SUCCESS, EZEKIEL, AWAL, EMMANUEL, BIGGOLD, QUARDRI, MUEEZ, ZAINAB, SALAM, WAJUD
+const OCR_ADAPTIVE_STRUCTURE = [
+  'ADAPTIVE STRUCTURE READING:',
+  '- Do not assume a fixed column position or field order.',
+  '- Read the actual headers/labels present on THIS specific page first.',
+  '- Map what you find to the requested fields based on the header text',
+  '  AND the pattern of the data (small numbers near dates = payment amounts;',
+  '  large round numbers = fee totals).',
+  '- If related numeric fields do not reconcile logically (e.g. stated total',
+  '  does not equal balance_bf + termFees), re-examine your column mapping.'
+].join('\n');
 
-Rules:
-1. Every row = one student — read ALL rows, do not skip any
-2. Ignore serial numbers, headers (NAMES, S/N), fee columns, dates, totals
-3. Unclear handwriting — make your BEST guess at the Nigerian name
-4. Output ONLY the JSON below — no explanation, no markdown, no extra text
+const NIGERIAN_NAME_REFERENCE = [
+  'NIGERIAN NAMES — use these for recognition, not for guessing:',
+  'Surnames: OGUNLADE, KASALI, ALAWODE, OYESANWO, OGUNDEYI, ALAO, AKINWANDE,',
+  '  OLAWALE, SHONPE, GBELEKALE, OLIYIDE, KOLANOLE, ADEGUNLE, ADEOYE, LAWAL,',
+  '  AYOMIDE, OBASA, OLATUNDE, ADENIYI, OGUNSOLA, ILELABOYE, OLOOETU',
+  'Firstnames: GABRIEL, RASAQ, GODWIN, ENOCH, ABIGEAL, KOREDE, MICHEAL,',
+  '  ADEMIDE, SUCCESS, EZEKIEL, AWAL, EMMANUEL, BIGGOLD, QUARDRI, MUEEZ,',
+  '  ZAINAB, SALAM, WAJUD, SALAIM, AISHA, ABDULLAHI, KHALEED, EMEKA, CHIOMA'
+].join('\n');
 
-{"names":["OGUNLADE GABRIEL","KASALI RASAQ","ALAWODE SUCCESS"],"detected_class":"JSS 2A"}`;
+const OCR_SCHEMAS = {
+
+  // ── 1. Student class register (names extraction) ───────────────────
+  student_roster: {
+    intro: 'You are reading a Nigerian school attendance/class register photo.',
+    usesAdaptiveStructure: true,
+    domainRules: [
+      'DOMAIN RULES:',
+      '- Every row = one student — read ALL rows, do not skip any.',
+      '- Combine as "SURNAME FIRSTNAME" (all caps).',
+      '- Ignore serial numbers, headers (NAMES, S/N), fee columns, dates, totals.',
+      '- Look for a class/form name anywhere on the page (header, title, corner)',
+      '  and return as detected_class (all caps, e.g. "JSS 2A"). Return null if',
+      '  not visible — do NOT guess.',
+      '- NAME EXCEPTION: make your best effort to read handwritten names even if',
+      '  unclear — a garbled name is better than omitting the student entirely.'
+    ],
+    referenceData: NIGERIAN_NAME_REFERENCE,
+    outputShape: { detected_class: null, names: ['SURNAME FIRSTNAME'] }
+  },
+
+  // ── 2. Fee payment ledger (the 14-column handwritten register) ─────
+  fee_ledger: {
+    intro: 'You are reading a photograph of a Nigerian school fees ledger (handwritten register book). Extract ALL student payment records visible.',
+    usesAdaptiveStructure: true,
+    domainRules: [
+      'COLUMN STRUCTURE (typical, may vary — adapt to what is actually on this page):',
+      '  S/N | NAMES | BALANCE FROM LAST TERM | CURRENT TERMS FEES | TOTAL |',
+      '  1ST PAYMENT | BALANCE | DATE | 2ND PAYMENT | BALANCE | DATE |',
+      '  3RD PAYMENT | BALANCE | DATE',
+      'PAYMENT STATUS — scan the ENTIRE row before deciding:',
+      '  - "FULLY PAID" / "FULL PAID" / "FULLY P" / "F.P." / "FP" / ticks (✓)',
+      '    or a zero remaining balance anywhere on the row → "FULLY PAID"',
+      '  - Partial amount less than total, or remaining balance > 0 → "Partial"',
+      '  - No evidence of payment on the entire row → "No Payment"',
+      '  - Never default silently to "No Payment" — any mark or amount on the',
+      '    row must be investigated before using "No Payment".',
+      'NUMERIC RULES:',
+      '  - Naira amounts as integers: 28,000 and 28.000 and ₦28000 all = 28000',
+      '  - Dates in D/M/YY format (e.g. 12/5/26 = 12 May 2026)',
+      '  - Crossed-out number = correction; use the newer number beside it',
+      '  - Blank cell = null',
+      '  - Ignore TOTAL rows at the bottom of the page',
+      '  - "BALANCE 3,000" appearing before CURRENT TERMS FEES = bal_bf'
+    ],
+    referenceData: NIGERIAN_NAME_REFERENCE,
+    outputShape: {
+      class: '', term: '', year: '',
+      students: [{
+        sn: 1, surname: '', firstname: '',
+        bal_bf: null, term_fees: 0, total: 0,
+        pmt1: null, bal1: null, date1: null,
+        pmt2: null, bal2: null, date2: null,
+        pmt3: null, bal3: null, date3: null,
+        status: 'FULLY PAID|Partial|No Payment'
+      }]
+    }
+  },
+
+  // ── 3a. Score sheet — read all 3 terms ────────────────────────────
+  score_sheet_all: {
+    intro: (p) => `You are reading a Nigerian school CA/exam score sheet (broadsheet) for subject: ${p && p.subject ? p.subject : 'unknown subject'}.`,
+    usesAdaptiveStructure: true,
+    domainRules: [
+      'DOMAIN RULES:',
+      '- The sheet has THREE term blocks side by side: "1ST TERM", "2ND TERM", "3RD TERM".',
+      '- Within each block: 1st CA | 2nd CA | 3rd CA (each /10) | Exam (/70).',
+      '- Read EVERY student row and ALL THREE terms.',
+      '- If the sheet only shows one or two terms, fill the missing terms with zeros.',
+      '- Names: SURNAME FIRSTNAME, all caps.',
+      '- NAME EXCEPTION: best-effort on unclear names — garbled > omitted.'
+    ],
+    referenceData: NIGERIAN_NAME_REFERENCE,
+    outputShape: [{
+      name: 'SURNAME FIRSTNAME',
+      t1: { ca1: 0, ca2: 0, ca3: 0, exam: 0 },
+      t2: { ca1: 0, ca2: 0, ca3: 0, exam: 0 },
+      t3: { ca1: 0, ca2: 0, ca3: 0, exam: 0 }
+    }]
+  },
+
+  // ── 3b. Score sheet — read one specific term only ──────────────────
+  score_sheet_single: {
+    intro: (p) => {
+      const labels = { '1': '1ST TERM', '2': '2ND TERM', '3': '3RD TERM' };
+      const label = labels[p && p.termNum] || '1ST TERM';
+      return `You are reading a Nigerian school CA/exam score sheet for subject: ${p && p.subject ? p.subject : 'unknown subject'}. Read ONLY the ${label} columns.`;
+    },
+    usesAdaptiveStructure: true,
+    domainRules: [
+      'DOMAIN RULES:',
+      '- The sheet may show multiple terms — read ONLY the columns under the',
+      '  requested term block; ignore all other terms\' columns.',
+      '- Within that term: 1st CA | 2nd CA | 3rd CA (each /10) | Exam (/70).',
+      '- Blank or illegible score cell = 0.',
+      '- Names: SURNAME FIRSTNAME, all caps.',
+      '- NAME EXCEPTION: best-effort on unclear names — garbled > omitted.'
+    ],
+    referenceData: NIGERIAN_NAME_REFERENCE,
+    outputShape: [{ name: 'SURNAME FIRSTNAME', ca1: 0, ca2: 0, ca3: 0, exam: 0 }]
+  },
+
+  // ── 4. Exam script (individual student answer sheet) ───────────────
+  exam_script: {
+    intro: 'You are reading a single Nigerian student\'s exam script or answer sheet.',
+    usesAdaptiveStructure: false,
+    domainRules: [
+      'DOMAIN RULES:',
+      '- Read the student name (usually at the top of the page).',
+      '- Read the total marked score — the final marked total, not intermediate sums.',
+      '- If multiple scores appear, return the one circled or marked as final.'
+    ],
+    outputShape: { name: '', score: 0 }
+  },
+
+  // ── 5. Student admission form / ID / register entry ────────────────
+  // Used by: scanStudentForm, scanStudentFormEdit
+  student_info: {
+    intro: 'You are reading a photograph that contains Nigerian school student information. The document format can be ANYTHING — printed admission form, handwritten notebook page, register table, student ID card, WhatsApp screenshot, or typed list.',
+    usesAdaptiveStructure: true,
+    domainRules: [
+      'DOMAIN RULES (find these fields ANYWHERE in the image regardless of format):',
+      '- name: student full name. Look under "Name:", "Student:", "Pupil:", or column',
+      '  "Names". Can be SURNAME FIRSTNAME or FIRSTNAME SURNAME.',
+      '- parent_phone: 11-digit Nigerian number (starts 07/08/09) or +234 prefix.',
+      '  Look near "Phone:", "WhatsApp:", "Tel:", "Parent:", or column "Phone No".',
+      '- class: class/grade. Values: Basic 1–6, Primary 1–6, JSS 1–3, SSS 1–3,',
+      '  Nursery 1–2, KG. Look near "Class:", "Form:", "Grade:", or column "Class".',
+      '- fee: Naira fee amount. Near "Fee:", ₦ symbol, or column "Fee". Integer only.',
+      '- dob: date of birth ONLY if clearly visible. Return exactly as written.',
+      '- FIELD EXCEPTION: output "UNCLEAR" (not null) for fields you cannot read —',
+      '  this triggers the per-field retry UI for the school staff.'
+    ],
+    outputShape: { name: '', parent_phone: '', class: '', fee: null, dob: '' }
+  },
+
+  // ── 6–10. New document types — schemas ready, UI not built yet ─────
+
+  subjects: {
+    intro: 'You are reading a Nigerian school curriculum sheet, timetable, or subject list.',
+    usesAdaptiveStructure: false,
+    domainRules: [
+      'DOMAIN RULES:',
+      '- Normalize subject names (e.g. "MATHS" → "Mathematics", "ENG LANG" → "English Language").',
+      '- Do not duplicate a subject that appears more than once.',
+      '- Ignore class names, teacher names, times, room numbers, and any other metadata.'
+    ],
+    outputShape: { subjects: [''] }
+  },
+
+  staff: {
+    intro: 'You are reading a Nigerian school staff or teacher list.',
+    usesAdaptiveStructure: true,
+    domainRules: [
+      'DOMAIN RULES:',
+      '- Role is one of: Class Teacher, Subject Teacher, Bursar, Principal.',
+      '- Infer the closest role from context (e.g. "Form Tutor" → "Class Teacher").',
+      '- assignedClass: the class this teacher is responsible for, or null.'
+    ],
+    referenceData: NIGERIAN_NAME_REFERENCE,
+    outputShape: { staff: [{ name: '', role: '', assignedClass: null }] }
+  },
+
+  alumni: {
+    intro: 'You are reading a Nigerian school alumni or graduates list.',
+    usesAdaptiveStructure: true,
+    domainRules: [],
+    referenceData: NIGERIAN_NAME_REFERENCE,
+    outputShape: { alumni: [{ name: '', year: null, job: null, phone: null }] }
+  },
+
+  expenses: {
+    intro: 'You are reading a Nigerian school expense record, receipt, or expense ledger.',
+    usesAdaptiveStructure: true,
+    domainRules: [
+      'DOMAIN RULES:',
+      '- If a total line is visible, check that extracted amounts roughly sum to it.',
+      '  Re-read digits if they do not reconcile.',
+      '- Categories (pick the closest): Staff Salaries, Utilities, Building Maintenance,',
+      '  Teaching Materials, Government/Ministry Fees, Cleaning & Security, Transport,',
+      '  Examination Fees, Other.'
+    ],
+    outputShape: { expenses: [{ description: '', amount: 0, date: null, category: 'Other' }] }
+  },
+
+  sports_roster: {
+    intro: 'You are reading a Nigerian school sports team roster or fixture list.',
+    usesAdaptiveStructure: true,
+    domainRules: [],
+    referenceData: NIGERIAN_NAME_REFERENCE,
+    outputShape: { players: [{ name: '', num: null, pos: null }] }
+  }
+};
+
+// ── Engine: builds a complete prompt from a schema entry ─────────────────
+function buildOcrPrompt(schemaKey, params) {
+  const schema = OCR_SCHEMAS[schemaKey];
+  if (!schema) throw new Error('[OCR] Unknown schema: ' + schemaKey);
+  const intro = typeof schema.intro === 'function' ? schema.intro(params) : schema.intro;
+  const parts = [
+    intro, '',
+    OCR_CORE_DISCIPLINE,
+    schema.usesAdaptiveStructure ? '\n' + OCR_ADAPTIVE_STRUCTURE : '',
+    schema.domainRules && schema.domainRules.length ? '\n' + schema.domainRules.join('\n') : '',
+    schema.referenceData ? '\n' + schema.referenceData : '',
+    '',
+    'Return JSON in exactly this shape (no markdown, no extra text):',
+    JSON.stringify(schema.outputShape, null, 2)
+  ];
+  return parts.filter(p => p !== '' || p === '').filter(Boolean).join('\n');
+}
+
+const GROQ_OCR_PROMPT = buildOcrPrompt('student_roster');
 
 // Set by groqVisionOCR/hfVisionOCR when the model spots a class/form header on the page.
 // Reset to '' at the start of each new multi-page scan (see processImagesSequentially).
@@ -4435,31 +4679,13 @@ function populateScoreOCRSelectors(){
 }
 function socrPickPhoto(){$('socr-img-input')?.click();}
 
-function _buildScoreOcrPrompt(sub, termMode){
-  // termMode: 'all' = read all 3 terms, '1'/'2'/'3' = read only that term
+function _buildScoreOcrPrompt(sub, termMode) {
   if (termMode === 'all') {
-    return `You are reading a Nigerian school score sheet (broadsheet/register) for subject: ${sub}.
-The sheet typically shows THREE terms side by side as separate column blocks: "1ST TERM", "2ND TERM", "3RD TERM".
-Within EACH term's block, the columns are: 1st CA | 2nd CA | 3rd CA | Exam — each CA is out of 10 (three CAs = 30% total) and Exam is out of 70.
-Read EVERY student row and ALL THREE terms. If a cell is blank/illegible, use 0.
-If the sheet only has one or two terms, fill the missing terms with zeros.
-Return ONLY valid JSON, no markdown, no explanation — an array where each entry has the student name plus t1, t2, t3 objects:
-[{"name":"SURNAME FIRSTNAME","t1":{"ca1":8,"ca2":9,"ca3":7,"exam":58},"t2":{"ca1":7,"ca2":8,"ca3":9,"exam":62},"t3":{"ca1":0,"ca2":0,"ca3":0,"exam":0}},...]
-Match names exactly as written (all caps).`;
+    return buildOcrPrompt('score_sheet_all', { subject: sub });
   } else {
-    const termNum = termMode;
-    const termLabel = termNum === '1' ? '1ST TERM' : termNum === '2' ? '2ND TERM' : '3RD TERM';
-    return `You are reading a Nigerian school score sheet (broadsheet/register) for subject: ${sub}.
-The sheet may show MULTIPLE terms side by side as separate column blocks (e.g. "1ST TERM", "2ND TERM", "3RD TERM").
-ONLY read the columns under the "${termLabel}" block — ignore other terms' columns entirely.
-Within that term's block, the columns are: 1st CA | 2nd CA | 3rd CA | Exam — each CA is out of 10 (three CAs = 30% total) and Exam is out of 70.
-Read every student row. If a CA or exam cell is blank/illegible, use 0.
-Return ONLY valid JSON, no markdown, no explanation:
-[{"name":"SURNAME FIRSTNAME","ca1":8,"ca2":9,"ca3":7,"exam":58},...]
-Match names exactly as written (all caps).`;
+    return buildOcrPrompt('score_sheet_single', { subject: sub, termNum: String(termMode) });
   }
 }
-
 function _parseScoreOcrJson(raw){
   let text=(raw||'[]').replace(/<think>[\s\S]*?<\/think>/gi,'').trim();
   const cb=text.match(/```(?:json)?\s*([\s\S]*?)```/); if(cb) text=cb[1].trim();
@@ -6079,14 +6305,8 @@ async function _callGroqGenericVision(apiKey, base64, mimeType, userPrompt, maxT
   throw new Error('Could not read document. Tap console (F12) to see what Groq returned, or try a clearer photo.');
 }
 
-// Shared reading discipline — same never-guess-a-status principle that
-// fixed the ledger payment-status bug in bloom-agent-v2, applied here too.
-const _OCR_DISCIPLINE = `
-READING DISCIPLINE:
-- Transcribe exactly what is written, do not guess or invent values.
-- Read numbers digit by digit — common confusions: 7 vs 1, 0 vs 6, 4 vs 9, 3 vs 8, 5 vs 6/8.
-- If a field is illegible or not visible, output "UNCLEAR" for that field rather than guessing a plausible value.
-- Return ONLY valid JSON, no markdown, no explanation.`;
+// _OCR_DISCIPLINE kept as alias for backward compatibility with _buildRetryPrompt
+const _OCR_DISCIPLINE = OCR_CORE_DISCIPLINE;
 
 function _isPremium() { return true; /* TEMP BYPASS - matches production School-Bloom, Bayo verifying premium features across both. Do not restore until he confirms. */ }
 // ── Premium gate for scan buttons ─────────────────────────────────────────
@@ -6206,19 +6426,7 @@ Output ONLY: {"amount":0,"date":"","method":"","payer":"","recipient":"","refere
 // Tells Groq what DATA to find, not what FORMAT to expect. Handles formal
 // admission forms, handwritten notebook pages, register tables, ID cards,
 // WhatsApp screenshots — all without any format assumptions.
-const _STUDENT_INFO_PROMPT = `You are reading a photograph that contains Nigerian school student information.
-The document could be ANYTHING: a printed admission form, handwritten notebook page, register table, ID card, or WhatsApp screenshot. Do NOT assume a specific layout.
-
-Find and extract these fields from ANYWHERE in the image:
-
-  name         — the student's full name. Nigerian names: Yoruba (Adeoye, Ogunsola, Olatunde, Ilelaboye), Hausa (Musa, Aisha, Abdullahi, Khaleed), Igbo (Emeka, Chioma, Ezekiel). Look under labels like "Name:", "Student:", "Pupil:", or in a table column headed "Names". Written as SURNAME FIRSTNAME or FIRSTNAME SURNAME.
-  parent_phone — a parent/guardian phone number. Nigerian numbers start with 07, 08, or 09 (11 digits total, e.g. 07085369494) or +234. Look near "Phone:", "WhatsApp:", "Tel:", "Parent:", or table column "Phone No".
-  class        — the student's class or grade. Terms: "Basic 4", "JSS 1", "SSS 2", "Nursery 2", "KG", "Primary 3". Look near "Class:", "Form:", "Grade:", or table column "Class".
-  fee          — a Naira fee amount. Look near "Fee:", "Amount:", "School Fee:", "Termly Fee:", ₦ symbol, or table column "Fee". Return as integer only (e.g. 36000 not "₦36,000").
-  dob          — date of birth if visible. Any date format. Return raw text as written.
-
-${_OCR_DISCIPLINE}
-Output ONLY valid JSON: {"name":"","parent_phone":"","class":"","fee":null,"dob":""}`;
+const _STUDENT_INFO_PROMPT = buildOcrPrompt('student_info');
 
 // ── Targeted retry prompts — one per field ────────────────────────────────
 // Used when the first scan misses a specific field. Narrower focus = better hit rate.
@@ -6431,84 +6639,43 @@ Output ONLY: {"name":"","email":"","role":"","phone":""}`;
 
 // ── 4. Groq Vision call with Nigerian fee ledger system prompt ────────
 async function _callGroqFeeVision(apiKey, base64, mimeType) {
-  // This system prompt is tuned from 5 real Nigerian school fee registers:
-  // Basic 4&5, Basic 3, Basic 1&2, Nursery 1&2, KG — Term 3, 2026
-  const SYSTEM_PROMPT = `You are reading a photograph of a Nigerian school fees ledger (handwritten register book). Extract ALL student payment records visible.
-
-COLUMN STRUCTURE (left to right):
-1. S/N — serial/row number
-2. NAMES — SURNAME first then FIRSTNAME (sometimes written as one full name)
-3. BALANCE FROM LAST TERM — debt carried from previous term (blank = 0)
-4. CURRENT TERMS FEES — this term's fee amount
-5. TOTAL — (Balance from last term) + (Current term fees)
-6. 1ST PART PAYMENT — first installment paid this term
-7. TELLER NO / BALANCE — running balance after 1st payment (the number remaining)
-8. DATE — date of 1st payment in Nigerian D/M/YY format (e.g. 12/5/26 = 12 May 2026)
-9. 2ND PART PAYMENT — second installment amount
-10. BALANCE — running balance after 2nd payment
-11. DATE — date of 2nd payment
-12. 3RD PART PAYMENT — third installment amount
-13. BALANCE / RECEIPT NO — running balance after 3rd payment
-14. DATE — date of 3rd payment
-
-CRITICAL RULES:
-- "FULLY PAID", "FULL PAID", "FULLY P", "F.P.", "FP" written anywhere on a row = student paid everything → status "FULLY PAID"
-- "BALANCE 3,000" or "BAL 2,000" appearing before CURRENT TERMS FEES = balance owed from last term
-- "Party" in a payment column = partial, record the number written near it
-- All amounts in Nigerian Naira as integers: 28,000 and 28000 and 28.000 all mean 28000
-- Dates: D/M/YY. Examples: 12/5/26 = 12 May 2026, 8/6/26 = 8 Jun 2026, 29/6/26 = 29 Jun 2026
-- Names are Nigerian: Yoruba (Olayinka, Adeoye, Ogunsola, Ilelaboye, Olatunde), Hausa (Musa, Aisha, Abdullahi, Khaleed), Igbo (Emeka, Chioma, Ezekiel)
-- Crossed-out numbers = corrections; use the newer number written next to them
-- Blank cell = no payment recorded for that installment → null
-- Ignore TOTAL rows at the bottom of the page
-- Class name is usually at the top (e.g. "BASIC FOUR & BASIC FIVE", "NURSERY 1 & 2", "K-G")
-- Term is usually at the top (e.g. "3RD", "2ND")
-
-Output ONLY raw valid JSON with no markdown, no explanation, no code fences:
-{"class":"","term":"","year":"","students":[{"sn":1,"surname":"OGUNDETI","firstname":"SALAIM","bal_bf":null,"term_fees":26000,"total":26000,"pmt1":10000,"bal1":16000,"date1":"12/5/26","pmt2":5000,"bal2":11000,"date2":"22/6/26","pmt3":null,"bal3":null,"date3":null,"status":"Partial"}]}
-
-Status values: "FULLY PAID" | "Partial" | "No Payment"
-Use null for blank/unreadable cells. Integers only for amounts. Do NOT invent data.`;
-
+  const prompt = buildOcrPrompt('fee_ledger');
   const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer ' + apiKey
-    },
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
     body: JSON.stringify({
       model: 'qwen/qwen3.6-27b',
       max_tokens: 4000,
       temperature: 0.1,
       reasoning_format: 'hidden',
-      messages: [{
-        role: 'user',
-        content: [
-          { type: 'image_url', image_url: { url: 'data:' + mimeType + ';base64,' + base64 } },
-          { type: 'text', text: SYSTEM_PROMPT }
-        ]
-      }]
+      messages: [
+        {
+          role: 'system',
+          content: 'You are a JSON data extraction tool. Output ONLY valid JSON — no markdown, no explanation text, no fences. If you cannot read a value, use null.'
+        },
+        {
+          role: 'user',
+          content: [
+            { type: 'image_url', image_url: { url: 'data:' + mimeType + ';base64,' + base64 } },
+            { type: 'text', text: prompt }
+          ]
+        }
+      ]
     })
   });
-
   if (!resp.ok) {
     const err = await resp.text();
     throw new Error('Groq ' + resp.status + ': ' + err.slice(0, 200));
   }
-
   const data = await resp.json();
   let raw = (data.choices?.[0]?.message?.content || '').trim();
-
-  // Strip thinking tokens and markdown fences
   raw = raw.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
   raw = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
-
-  try { return JSON.parse(raw); }
-  catch(e) {
-    const m = raw.match(/\{[\s\S]*\}/);
-    if (m) return JSON.parse(m[0]);
-    throw new Error('Could not parse Groq response. Try a clearer, straighter photo of the register.');
-  }
+  window._lastGroqRaw = raw;
+  try { return JSON.parse(raw); } catch(e) {}
+  const extracted = _extractJSONObject(raw);
+  if (extracted) { try { return JSON.parse(extracted); } catch(e) {} }
+  throw new Error('Could not parse fee register response. Try a clearer, straighter photo of the register.');
 }
 
 // ── 5. Show review modal before importing ─────────────────────────────
