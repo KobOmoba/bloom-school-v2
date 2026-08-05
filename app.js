@@ -2000,7 +2000,7 @@ function editStudent(idx) {
       <select id="edit-s-class" onchange="handleClassSelectChange(this)"></select>
 
       <label>Gender</label>
-      <select id="edit-s-gender" style="width:100%;background:#0a1525;border:1px solid var(--border);color:var(--text);border-radius:8px;padding:0.45rem 0.6rem;">
+      <select id="edit-s-gender" style="width:100%;background:var(--input,#f1f5f9);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:0.45rem 0.6rem;">
         <option value="" ${!s.gender?'selected':''}>— Select —</option>
         <option value="Male"   ${s.gender==='Male'  ?'selected':''}>Male</option>
         <option value="Female" ${s.gender==='Female'?'selected':''}>Female</option>
@@ -2022,7 +2022,7 @@ function editStudent(idx) {
         <input id="edit-s-emergency" value="${esc(safety.emergencyPhone||'')}" placeholder="e.g. Uncle's or Aunt's number" style="margin-top:0.2rem;">
 
         <label style="font-size:0.76rem;margin-top:0.35rem;">Authorised Collectors</label>
-        <textarea id="edit-s-collectors" rows="2" placeholder="Names of people allowed to pick up this child, e.g. Mum Fatima, Uncle Tunde, Driver Emeka" style="width:100%;background:#0a1525;border:1px solid var(--border);color:var(--text);border-radius:8px;padding:0.45rem 0.5rem;font-size:0.78rem;resize:none;margin-top:0.2rem;">${esc(safety.collectors||'')}</textarea>
+        <textarea id="edit-s-collectors" rows="2" placeholder="Names of people allowed to pick up this child, e.g. Mum Fatima, Uncle Tunde, Driver Emeka" style="width:100%;background:var(--input,#f1f5f9);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:0.45rem 0.5rem;font-size:0.78rem;resize:none;margin-top:0.2rem;">${esc(safety.collectors||'')}</textarea>
         <div style="font-size:0.68rem;color:var(--sub);margin-top:2px;">Separate names with a comma. The Security Agent checks this list before releasing any child.</div>
 
         <label style="font-size:0.76rem;margin-top:0.35rem;">Medical / Special Notes</label>
@@ -5993,7 +5993,21 @@ function _resizeFeeImage(file, maxPx) {
 // Gated behind SD.config.plan === 'premium', same mechanism as BloomCollect.
 // ═══════════════════════════════════════════════════════════════════════
 
-async function _callGroqGenericVision(apiKey, base64, mimeType, systemPrompt, maxTokens, _retry) {
+// ── Brace-matching JSON extractor — more robust than regex ─────────────
+// Handles explanation text before/after JSON, nested objects, etc.
+function _extractJSONObject(text) {
+  let depth = 0, start = -1;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === '{') { if (depth === 0) start = i; depth++; }
+    else if (text[i] === '}') {
+      depth--;
+      if (depth === 0 && start !== -1) return text.slice(start, i + 1);
+    }
+  }
+  return null;
+}
+
+async function _callGroqGenericVision(apiKey, base64, mimeType, userPrompt, maxTokens, _retry) {
   if (_retry === undefined) _retry = 0;
   const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
@@ -6003,13 +6017,19 @@ async function _callGroqGenericVision(apiKey, base64, mimeType, systemPrompt, ma
       max_tokens: maxTokens || 800,
       temperature: 0,
       reasoning_format: 'hidden',
-      messages: [{
-        role: 'user',
-        content: [
-          { type: 'image_url', image_url: { url: 'data:' + mimeType + ';base64,' + base64 } },
-          { type: 'text', text: systemPrompt }
-        ]
-      }]
+      messages: [
+        {
+          role: 'system',
+          content: 'You are a JSON data extraction tool. Your output must be ONLY a valid JSON object — no explanations, no introductions, no markdown, no text of any kind outside the JSON. If you cannot determine a value, use null or "UNCLEAR" as specified in the prompt. You must always output the JSON object even if the image quality is poor.'
+        },
+        {
+          role: 'user',
+          content: [
+            { type: 'image_url', image_url: { url: 'data:' + mimeType + ';base64,' + base64 } },
+            { type: 'text', text: userPrompt }
+          ]
+        }
+      ]
     })
   });
 
@@ -6020,22 +6040,43 @@ async function _callGroqGenericVision(apiKey, base64, mimeType, systemPrompt, ma
     if (!waitMs || isNaN(waitMs)) waitMs = 15000;
     waitMs = Math.min(Math.max(waitMs, 3000), 60000);
     await new Promise(r => setTimeout(r, waitMs));
-    return _callGroqGenericVision(apiKey, base64, mimeType, systemPrompt, maxTokens, _retry + 1);
+    return _callGroqGenericVision(apiKey, base64, mimeType, userPrompt, maxTokens, _retry + 1);
   }
   if (!resp.ok) {
     const err = await resp.text();
     throw new Error('Groq ' + resp.status + ': ' + err.slice(0, 200));
   }
+
   const data = await resp.json();
   let raw = (data.choices?.[0]?.message?.content || '').trim();
+
+  // Strip reasoning blocks if any leaked through
   raw = raw.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+  // Strip markdown fences
   raw = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
-  try { return JSON.parse(raw); }
-  catch(e) {
-    const m = raw.match(/\{[\s\S]*\}/);
-    if (m) { try { return JSON.parse(m[0]); } catch(e2) {} }
-    throw new Error('Could not parse response. Try a clearer, straighter photo.');
+
+  // Store for debugging (inspect via window._lastGroqRaw in browser console)
+  window._lastGroqRaw = raw;
+
+  // Attempt 1: parse directly
+  try { return JSON.parse(raw); } catch(e) {}
+
+  // Attempt 2: extract the outermost JSON object by brace-matching
+  const jsonStr = _extractJSONObject(raw);
+  if (jsonStr) { try { return JSON.parse(jsonStr); } catch(e) {} }
+
+  // Attempt 3: fix common Groq formatting issues then parse
+  if (jsonStr) {
+    try {
+      const fixed = jsonStr
+        .replace(/,\s*([}\]])/g, '$1')   // trailing commas
+        .replace(/:\s*undefined/g, ':null'); // undefined values
+      return JSON.parse(fixed);
+    } catch(e) {}
   }
+
+  console.error('[EduBloom] Groq parse failed. Raw response (first 400 chars):', raw.slice(0, 400));
+  throw new Error('Could not read document. Tap console (F12) to see what Groq returned, or try a clearer photo.');
 }
 
 // Shared reading discipline — same never-guess-a-status principle that
