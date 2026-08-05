@@ -788,10 +788,10 @@ Once all pass → Step 3 (Bayo publishes Firestore security rules) → Step 4 (p
 **Also in this session:** `_callGroqFeeVision` now uses the same system message + brace-matching JSON extraction as `_callGroqGenericVision`, fixing the same parse-failure class that was found during Step 2 device testing.
 
 
-### 2026-08-05 (4) — Critical fix: duplicate declaration broke app load
+### 2026-08-05 (5) — Fix: cache-busting version not bumped
 
-**Bug:** The OCR Engine v2 insertion used a char-position replacement for `_STUDENT_INFO_PROMPT`. The replacement calculated `idx` correctly but accidentally prepended the new single-line declaration at position 0 of the file in addition to placing it at the correct position (L6429). Result: two `const _STUDENT_INFO_PROMPT` declarations → `SyntaxError: Identifier already declared` → entire app.js failed to load → Enter Portal button (and everything else) became unresponsive.
+**Bug:** `app.js?v=20260803-authkeyfix` in `index.html` hadn't been updated since August 3rd. Every browser (including on device) was serving the stale pre-OCR-engine cached file. All pushes since Aug 3rd were invisible to any device that had previously visited the page.
 
-**Fix:** Removed the rogue prefix at position 0. One declaration remains at L6429. `node --check` now passes clean.
+**Fix:** Bumped to `app.js?v=20260805-ocr-v2`. All devices will now fetch the latest build on next page load.
 
-**Lesson:** Any file manipulation using char positions must be followed immediately by a syntax check (`node --check`) before pushing. Added to process going forward.
+**Standing rule (now enforced):** Every push that touches `app.js` must also bump the `?v=` parameter in `index.html`. Format: `?v=YYYYMMDD-descriptor`. No exceptions — without this, all device testing is testing old code.
