@@ -689,3 +689,40 @@ Both `scanStudentForm` (Add modal) and `scanStudentFormEdit` (Edit modal) now us
 - [ ] Re-test student scan with updated universal prompt
 
 Once all pass → Step 3 (Bayo publishes Firestore security rules) → Step 4 (port to v1 production).
+
+
+---
+
+## Changelog
+
+### 2026-08-05 — Step 1 complete + OCR overhaul
+
+**Step 1: Migration removed, V2 is the sole data model**
+- `migrateStudentsToV2()` and `runMigrationUI()` removed entirely — no schools existed yet, no migration needed
+- All dual-write `.catch()` fire-and-forget calls promoted to primary `await` calls in `addStudent`, `deleteStudent`, `recordPayment`, `saveScores`, `addStaff`, and promotion save
+- `hydrateFromV2` is now the only read path on login — empty subcollection = new school (not "fall back to old flat data")
+- Phase 1+2 and Phase 4 block comment headers replaced with single clean DATA MODEL comment
+- All 7 occurrences of `v2_schools` renamed to `schools` — matches portal and production
+- `📦 Migrate Students` button removed from Settings in index.html; section renamed to `🔑 Staff Account Setup`
+
+**Firebase API key consolidated**
+- bloom-school-v2 now uses the original single Firebase web app registration (`appId: 2b3da887`) shared across all four EduBloom apps
+- Second web app registration (`appId: 0f9d338f`) is orphaned and can be deleted from Firebase Console
+
+**Step 2 device testing — issues found and fixed**
+- `Scan Admission Form/ID` was failing: prompt was too narrow (expected only formal forms). Rebuilt as universal prompt.
+- Fee field was never extracted: old prompt had no fee field. Now extracted and wired to `ns-fee`.
+- No scan on student profile page after creation. Fixed: `📷 Scan to Fill Missing Fields` button added to Edit Student modal, wired to `scanStudentFormEdit()`.
+- Fee Register scan description clarified: it expects a multi-column fee ledger, not a simple student list.
+- CSV upload hint added: requires `StudentName, Amount` columns with names matching exactly as registered.
+
+**Universal OCR system — reads any school document format**
+- `_STUDENT_INFO_PROMPT`: one prompt that handles printed forms, handwritten lists, register tables, ID cards, WhatsApp screenshots — finds data by MEANING not FORMAT
+- `_buildRetryPrompt(fieldKey)`: five targeted single-field prompts (name, phone, class, fee, dob)
+- `_fillStudentFromResult(result, fieldMap)`: fills inputs, returns `{found[], unclear[]}`
+- `_renderScanFeedback(fbEl, found, unclear, fieldMap, fbElId)`: shows field-by-field result — green for found, amber ⚠️ with 📷 Retry button per missing field
+- `_triggerRetryField` + `_doRetryField`: per-field retry without rescanning the whole document again
+
+**Rule established:** README.md must be updated after every completed task, in every repo that was touched.
+
+**Next step:** Re-test the scan on device (hard-refresh first). Then Step 3 — Bayo publishes Firestore security rules.
