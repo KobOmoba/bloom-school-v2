@@ -816,3 +816,22 @@ All `_resizeFeeImage(file, 1200)` calls changed to 800. The proven free-tier con
 
 **Lesson: syntax check is not enough**
 `node --check` only catches syntax errors. Runtime errors (wrong API params, TPM budget exceeded, wrong function arguments) require device testing. The analysis that found these 5 issues came from reading memory notes about the proven Groq config — those notes must be the reference point before any OCR-related code change.
+
+
+### 2026-08-05 (7) — Per-field retry system confirmed + _doRetryField token fix
+
+**System audit:** 25-point check confirmed the full per-field retry system is intact end-to-end:
+- `_buildRetryPrompt(fieldKey)` — 5 targeted single-field prompts (name, phone, class, fee, dob)
+- `_fillStudentFromResult` + `_renderScanFeedback` — fills inputs, renders ✅/⚠️ field-by-field
+- `_triggerRetryField` + `_doRetryField` — opens new file picker for just the missing field, no full rescan
+- `📷 Retry` buttons rendered per missing field in both Add Student and Edit Student modals
+- `_SCAN_MAP_ADD` / `_SCAN_MAP_EDIT` correctly wired to their respective feedback div IDs
+
+**Fix:** `_doRetryField` was passing `150` max_tokens to `_callGroqGenericVision` — changed to `4096` to match the proven free-tier config. A single-field retry response is ~20 tokens but 150 was still technically at risk on a busy TPM window.
+
+**How per-field retry works:**
+1. First scan runs — fills what it finds, shows ✅ for each found field, ⚠️ + 📷 for each missing one
+2. User taps 📷 next to "Phone" — a new file picker opens (can use same or different photo)
+3. Groq is sent a targeted prompt: *"Look ONLY for a Nigerian phone number in this image"*
+4. Only the Phone field is updated — everything else stays as-is
+5. If still not found: "Still couldn't read Phone — please type it manually"
