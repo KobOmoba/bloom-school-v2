@@ -726,3 +726,16 @@ Once all pass → Step 3 (Bayo publishes Firestore security rules) → Step 4 (p
 **Rule established:** README.md must be updated after every completed task, in every repo that was touched.
 
 **Next step:** Re-test the scan on device (hard-refresh first). Then Step 3 — Bayo publishes Firestore security rules.
+
+
+### 2026-08-05 (2) — Groq parse hardening + Edit modal styling fixes
+
+**Groq JSON parse — 3 attempts instead of 1**
+- Added `system` role message: *"You are a JSON data extraction tool. Output ONLY valid JSON."* — separating instructions from the image gives stronger instruction-following
+- `_extractJSONObject(text)`: brace-counting extractor replaces `/{[\s\S]*}/` regex — correctly handles explanation text before/after JSON and nested objects
+- Three sequential parse attempts: (1) direct `JSON.parse`, (2) brace-match extract, (3) trailing-comma + undefined cleanup
+- `window._lastGroqRaw`: raw Groq response stored for debugging — inspect via browser console if parse fails
+
+**Edit Student modal styling**
+- Gender `<select>` had hardcoded `background:#0a1525` (dark navy) — invisible on light modal. Fixed to `var(--input,#f1f5f9)`.
+- Authorised Collectors `<textarea>` had same dark background bug. Same fix applied.
