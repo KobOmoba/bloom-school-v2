@@ -6543,7 +6543,7 @@ async function _doRetryField(event, fieldKey, mapJson, fbElId) {
     const resized = await _resizeFeeImage(file, 800);
     const key = await _getFeeGroqKey(); if (!key) { note('❌ Groq key not found.'); return; }
     const prompt = _buildRetryPrompt(fieldKey); if (!prompt) { note('❌ Unknown field.'); return; }
-    const result = await _callGroqGenericVision(key, resized.base64, resized.mimeType, prompt, 150);
+    const result = await _callGroqGenericVision(key, resized.base64, resized.mimeType, prompt, 4096);
     const fieldMap = JSON.parse(decodeURIComponent(mapJson));
     const value = result[fieldKey];
     const el = fieldMap[fieldKey] ? $(fieldMap[fieldKey]) : null;
