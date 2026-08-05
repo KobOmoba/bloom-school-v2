@@ -739,3 +739,50 @@ Once all pass → Step 3 (Bayo publishes Firestore security rules) → Step 4 (p
 **Edit Student modal styling**
 - Gender `<select>` had hardcoded `background:#0a1525` (dark navy) — invisible on light modal. Fixed to `var(--input,#f1f5f9)`.
 - Authorised Collectors `<textarea>` had same dark background bug. Same fix applied.
+
+
+### 2026-08-05 (3) — OCR Engine v2: schema-driven architecture
+
+**Problem solved:** Every OCR feature had its own hand-written prompt string. At 4 document types this was manageable. At 10+ types across schools with real-world format variation it breaks down — every discipline fix has to be manually copied into every prompt, and drift is already happening.
+
+**Solution: one engine, driven by data, not prose.**
+
+`OCR_CORE_DISCIPLINE` — single source of truth for all reading rules:
+- No hallucination: transcribe ONLY what is visibly present
+- Digit-by-digit number reading (common confusions listed)
+- null for illegible fields (never guess)
+- JSON-only output (no markdown, no explanation text)
+- Improve this once → all 10 document types benefit immediately
+
+`OCR_ADAPTIVE_STRUCTURE` — shared block for tabular/register documents that tells Groq to read the actual column headers on THIS specific page rather than assuming a fixed layout.
+
+`NIGERIAN_NAME_REFERENCE` — extracted into its own constant, shared across all schemas that need it.
+
+`OCR_SCHEMAS` — 10 document types as data entries:
+
+| Schema key | Description | Status |
+|---|---|---|
+| `student_roster` | Class register — extract student names | ✅ Live (replaces `GROQ_OCR_PROMPT`) |
+| `fee_ledger` | 14-column payment ledger | ✅ Live (replaces `_callGroqFeeVision` inline prompt) |
+| `score_sheet_all` | Score broadsheet — all 3 terms | ✅ Live (replaces `_buildScoreOcrPrompt`) |
+| `score_sheet_single` | Score sheet — one specific term | ✅ Live (replaces `_buildScoreOcrPrompt`) |
+| `exam_script` | Individual answer sheet | ✅ Live |
+| `student_info` | Any student document format | ✅ Live (replaces `_STUDENT_INFO_PROMPT`) |
+| `subjects` | Curriculum / subject list | ⏳ Schema ready, no UI yet |
+| `staff` | Staff/teacher list | ⏳ Schema ready, no UI yet |
+| `alumni` | Alumni/graduates list | ⏳ Schema ready, no UI yet |
+| `expenses` | Expense records / receipts | ⏳ Schema ready, no UI yet |
+| `sports_roster` | Sports team roster | ⏳ Schema ready, no UI yet |
+
+`buildOcrPrompt(schemaKey, params)` — assembles a complete, disciplined prompt from any schema entry. Supports function-style intros for parameterised prompts (score sheets inject subject name + term label at call time).
+
+**All hand-written prompts retired:**
+- `GROQ_OCR_PROMPT` (17 lines) → `buildOcrPrompt('student_roster')` (1 line)
+- `_buildScoreOcrPrompt` body (30 lines) → 6 lines routing to 2 schemas
+- `_callGroqFeeVision` inline SYSTEM_PROMPT (35 lines) → `buildOcrPrompt('fee_ledger')` (1 line)
+- `_STUDENT_INFO_PROMPT` (20 lines) → `buildOcrPrompt('student_info')` (1 line)
+- `_OCR_DISCIPLINE` → alias to `OCR_CORE_DISCIPLINE` (backward compat for retry prompts)
+
+**Adding document type #11:** one entry in `OCR_SCHEMAS`. No new prompt writing, no discipline rules to copy, no risk of drift.
+
+**Also in this session:** `_callGroqFeeVision` now uses the same system message + brace-matching JSON extraction as `_callGroqGenericVision`, fixing the same parse-failure class that was found during Step 2 device testing.
