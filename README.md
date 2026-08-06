@@ -850,3 +850,13 @@ All `_resizeFeeImage(file, 1200)` calls changed to 800. The proven free-tier con
 **Left unchanged:** Finance AI chat (llama-3.3-70b-versatile text model) at `max_tokens:300` — correct for 3-4 sentence chat responses.
 
 **Cascade (dormant):** `_callHFGenericVision()` and `_callScanCascade()` inserted but not wired up. HuggingFace cascade to be activated when HF connectivity is confirmed working. Groq-only path unchanged.
+
+
+### 2026-08-06 — Test results + delete cascade fix
+
+**Tests 4 and 5 confirmed ✅**
+- Test 4 (logout/re-login): Elizabeth Adesanya persisted with all data intact. `hydrateFromV2` is confirmed as the sole working read path.
+- Test 5 (scores write + persist): 2 subjects entered (English Language, Mathematics), avg 93. Scores survived logout/re-login correctly.
+
+**Test 6 (delete cascade) — partial fail, now fixed**
+Student profile was removed but flat scores remained in the parent Firestore document. `deleteStudentV2()` correctly batches subcollection deletes (score docs + private/fees + student profile), but `deleteStudent()` was only pushing the updated `students` array without cleaning `SD.scores[term][sid]`. Fixed: now iterates all terms, removes the student's score entry from `SD.scores`, pushes updated scores before the students push. Both flat and subcollection data now cleaned on delete.
