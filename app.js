@@ -5296,8 +5296,11 @@ Read the student's name (usually written at the top) and their total score/marks
 Return ONLY valid JSON: {"name":"Student Full Name","score":72}
 If you cannot read the name, use "Unknown". If you cannot read the score, use 0.`;
       const r=await fetch('https://api.groq.com/openai/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+groqKey},body:JSON.stringify({
-        model: GROQ_OCR_MODEL, temperature:0.2, max_tokens:300,
-        messages:[{role:'user',content:[{type:'image_url',image_url:{url:'data:'+mime+';base64,'+b64}},{type:'text',text:prompt}]}]
+        model: GROQ_OCR_MODEL, temperature:0.2, max_tokens:4096, reasoning_format:'hidden',
+        messages:[
+          {role:'system',content:'You are a JSON data extraction tool. Output ONLY valid JSON — no explanation, no markdown.'},
+          {role:'user',content:[{type:'image_url',image_url:{url:'data:'+mime+';base64,'+b64}},{type:'text',text:prompt}]}
+        ]
       })});
       const d=await r.json();
       let raw=(d.choices?.[0]?.message?.content||'{"name":"Unknown","score":0}').replace(/<think>[\s\S]*?<\/think>/gi,'').trim();
@@ -6233,6 +6236,70 @@ function _resizeFeeImage(file, maxPx) {
 // Gated behind SD.config.plan === 'premium', same mechanism as BloomCollect.
 // ═══════════════════════════════════════════════════════════════════════
 
+// ── HuggingFace Qwen2.5-VL — cascade fallback when Groq fails ────────────
+// Same prompt, different model. No key needed for free tier (rate-limited).
+// With hfApiKey set in portal admin settings, limits are higher.
+async function _callHFGenericVision(base64, mimeType, prompt) {
+  const HF_URL = 'https://api-inference.huggingface.co/models/Qwen/Qwen2.5-VL-7B-Instruct/v1/chat/completions';
+  const hfKey  = getHFKey ? getHFKey() : (window.HF_API_KEY || '');
+  const hdrs   = { 'Content-Type': 'application/json' };
+  if (hfKey) hdrs['Authorization'] = 'Bearer ' + hfKey;
+  const body = JSON.stringify({
+    model: 'Qwen/Qwen2.5-VL-7B-Instruct',
+    max_tokens: 4096, temperature: 0.1,
+    messages: [{ role: 'user', content: [
+      { type: 'image_url', image_url: { url: 'data:' + mimeType + ';base64,' + base64 } },
+      { type: 'text', text: prompt }
+    ]}]
+  });
+  let resp = await fetch(HF_URL, { method: 'POST', headers: hdrs, body });
+  // Handle cold start (model loading)
+  if (resp.status === 503) {
+    const errData = await resp.json().catch(() => ({}));
+    const wait = Math.min((errData.estimated_time || 20) * 1000, 35000);
+    console.log('[HF] Cold start — waiting', Math.round(wait / 1000) + 's');
+    await new Promise(r => setTimeout(r, wait));
+    resp = await fetch(HF_URL, { method: 'POST', headers: hdrs, body });
+  }
+  if (!resp.ok) { const err = await resp.json().catch(() => ({})); throw new Error('HuggingFace ' + resp.status + ': ' + (err.error?.message || '')); }
+  const data = await resp.json();
+  let raw = (data.choices?.[0]?.message?.content || '').trim();
+  raw = raw.replace(/```(?:json)?\s*/gi, '').replace(/```\s*$/gi, '').trim();
+  window._lastHFRaw = raw;
+  try { return JSON.parse(raw); } catch(e) {}
+  const extracted = _extractJSONObject(raw);
+  if (extracted) { try { return JSON.parse(extracted); } catch(e) {} }
+  throw new Error('HuggingFace: could not parse response');
+}
+
+// ── OCR Cascade — Groq → HuggingFace ─────────────────────────────────────
+// Tries each engine in order. First with a parseable result wins.
+// onProgress(msg) is called with a status string as each engine is attempted.
+// This is the same pattern as bloom-agent's buildLedgerCascade — first
+// engine wins, next tried only on failure, surfacing per-field retry only
+// when ALL engines have failed.
+async function _callScanCascade(base64, mimeType, prompt, onProgress) {
+  // ── Engine 1: Groq ───────────────────────────────────────────────────────
+  if (onProgress) onProgress('📸 Reading with Groq…');
+  try {
+    const groqKey = await _getFeeGroqKey();
+    if (groqKey) {
+      const result = await _callGroqGenericVision(groqKey, base64, mimeType, prompt, 4096);
+      if (result) return { result, provider: 'Groq' };
+    }
+  } catch(e) { console.warn('[OCR Cascade] Groq:', e.message); }
+
+  // ── Engine 2: HuggingFace Qwen2.5-VL ────────────────────────────────────
+  if (onProgress) onProgress('⚡ Groq busy — trying HuggingFace Qwen…');
+  try {
+    const result = await _callHFGenericVision(base64, mimeType, prompt);
+    if (result) return { result, provider: 'HuggingFace' };
+  } catch(e) { console.warn('[OCR Cascade] HuggingFace:', e.message); }
+
+  // ── All providers failed ─────────────────────────────────────────────────
+  throw new Error('All OCR providers failed — use the 📷 retry buttons below for each missing field, or type values manually.');
+}
+
 // ── Brace-matching JSON extractor — more robust than regex ─────────────
 // Handles explanation text before/after JSON, nested objects, etc.
 function _extractJSONObject(text) {
@@ -6359,7 +6426,7 @@ async function scanExpenseReceipt(event) {
   if (!navigator.onLine) { show('❌ No internet connection.'); return; }
   show('📸 Reading receipt...');
   try {
-    const resized = await _resizeFeeImage(file, 1000);
+    const resized = await _resizeFeeImage(file, 800);
     const key = await _getFeeGroqKey();
     if (!key) { show('❌ Groq key not found — ask Bayo to add it in portal settings.'); return; }
     const prompt = `You are reading a photograph of a Nigerian school expense receipt or payment teller/slip.
@@ -6398,7 +6465,7 @@ async function scanPaymentReceipt(event, idx) {
   if (!navigator.onLine) { show('❌ No internet connection.'); return; }
   show('📸 Reading payment slip...');
   try {
-    const resized = await _resizeFeeImage(file, 1000);
+    const resized = await _resizeFeeImage(file, 800);
     const key = await _getFeeGroqKey();
     if (!key) { show('❌ Groq key not found — ask Bayo to add it in portal settings.'); return; }
     const prompt = `You are reading a photograph of a Nigerian bank payment teller, POS slip, transfer receipt, or cash receipt for a school fee payment.
