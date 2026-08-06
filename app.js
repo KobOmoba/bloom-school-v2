@@ -2217,10 +2217,23 @@ async function addStudent() {
 async function deleteStudent(idx) {
   if (!confirm(`Delete ${SD.students[idx]?.name}?`)) return;
   const v2Id = SD.students[idx]?._v2Id;
+  const sid  = SD.students[idx]?.id ?? idx;
   SD.students.splice(idx, 1);
-  if (schoolId && v2Id && !SD.config?._demo) {
-    try { await deleteStudentV2(schoolId, v2Id); } catch (e) { console.warn('deleteStudent write failed:', e.message); }
+
+  // Clean up flat scores for this student across all terms
+  if (SD.scores) {
+    Object.keys(SD.scores).forEach(term => {
+      if (SD.scores[term]) delete SD.scores[term][sid];
+    });
+    saveLocal('scores', SD.scores);
+    SQ.push('scores', SD.scores);
   }
+
+  // Delete subcollection documents (profile + private/fees + all score docs)
+  if (schoolId && v2Id && !SD.config?._demo) {
+    try { await deleteStudentV2(schoolId, v2Id); } catch (e) { console.warn('deleteStudent subcollection delete failed:', e.message); }
+  }
+
   await SQ.push('students', SD.students); checkTierStatus();
   closeM('student-modal'); renderStudentList(); renderBanner();
 }
