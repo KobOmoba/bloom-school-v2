@@ -860,3 +860,25 @@ All `_resizeFeeImage(file, 1200)` calls changed to 800. The proven free-tier con
 
 **Test 6 (delete cascade) — partial fail, now fixed**
 Student profile was removed but flat scores remained in the parent Firestore document. `deleteStudentV2()` correctly batches subcollection deletes (score docs + private/fees + student profile), but `deleteStudent()` was only pushing the updated `students` array without cleaning `SD.scores[term][sid]`. Fixed: now iterates all terms, removes the student's score entry from `SD.scores`, pushes updated scores before the students push. Both flat and subcollection data now cleaned on delete.
+
+
+### 2026-08-06 (2) — Role-based nav whitelist + Test 7 confirmed
+
+**Test 7 confirmed ✅** — Class Teacher login worked. Staff account claimed via Firebase Auth. Role visible on login.
+
+**Issue found:** Teacher could see all nav items — Alumni, Analytics, Agents, Settings, Scorecard, Scout, Revenue, Staff, Expenses. Previous implementation was a blacklist (only hid a few items) rather than a whitelist.
+
+**Fix — full whitelist model:**
+
+| Role | Allowed tabs |
+|---|---|
+| Principal | All |
+| Class Teacher | students, sports, arts, music, health, comms, security, support |
+| Subject Teacher | students, sports, arts, music, health, comms, security, support, scorecard |
+| Bursar | revenue, students, expenses, finance, comms, analytics, support |
+
+Implementation:
+- `ROLE_TABS` constant with explicit `Set` per role (`null` for Principal)
+- `applyRoleRestrictions()` now hides any nav button whose `data-t` is NOT in the allowed set
+- `go(tab)` — role gate at entry: if tab not allowed, shows toast and redirects to role's default landing tab
+- `goDashboard()` — now uses `ROLE_DEFAULT_TAB[userRole]` instead of hardcoded `'revenue'` (prevents redirect loop for Class Teacher)
