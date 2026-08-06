@@ -1167,26 +1167,38 @@ function defaultOpps() {
 }
 
 // ── RBAC helpers ───────────────────────────────────────────────────────
+// ── Role-based navigation whitelist ──────────────────────────────────────
+// null = Principal (sees everything). All other roles use explicit whitelists.
+// Anything NOT in the set is hidden from the nav AND gated in go().
+const ROLE_TABS = {
+  'Principal':       null,
+  'Class Teacher':   new Set(['students','sports','arts','music','health','comms','security','support']),
+  'Subject Teacher': new Set(['students','sports','arts','music','health','comms','security','support','scorecard']),
+  'Bursar':          new Set(['revenue','students','expenses','finance','comms','analytics','support']),
+};
+const ROLE_DEFAULT_TAB = {
+  'Principal': 'revenue', 'Bursar': 'revenue',
+  'Class Teacher': 'students', 'Subject Teacher': 'scorecard'
+};
+
+function _allowedTabs() { return ROLE_TABS[userRole] || null; }
+function _canGo(tab)    { const a = _allowedTabs(); return !a || a.has(tab); }
+
 function canSeeFees() { return ['Principal', 'Bursar'].includes(userRole); }
 function getAssignedClass() { return currentStaff ? currentStaff.assignedClass : null; }
 
 function applyRoleRestrictions() {
-  const links = document.querySelectorAll('.nlink');
-  const isClassTeacher = userRole === 'Class Teacher';
-  const isSubjectTeacher = userRole === 'Subject Teacher';
-  const isBursar = userRole === 'Bursar';
-  links.forEach(l => {
-    l.style.display = '';
-    const tab = l.dataset.t;
-    if (isClassTeacher || isSubjectTeacher) {
-      if (['revenue', 'staff', 'expenses', 'finance', 'aitools'].includes(tab)) l.style.display = 'none';
-    }
-    if (isBursar) {
-      if (['sports', 'arts', 'music', 'health', 'opps'].includes(tab)) l.style.display = 'none';
-    }
+  const allowed = _allowedTabs();
+  document.querySelectorAll('.nlink').forEach(btn => {
+    const tab = btn.dataset.t;
+    btn.style.display = (!allowed || !tab || allowed.has(tab)) ? '' : 'none';
   });
-  const migrateBtn = document.getElementById('btn-migrate-students');
-  if (migrateBtn) migrateBtn.style.display = (userRole === 'Principal') ? '' : 'none';
+  // Principal-only UI elements
+  const principalOnly = ['btn-add-staff','btn-school-settings','sec-settings'];
+  principalOnly.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = (userRole === 'Principal') ? '' : 'none';
+  });
 }
 
 // ── Staff Login Step 2 ──────────────────────────────────────────────────
@@ -1744,10 +1756,16 @@ function goDashboard() {
   const backdrop = document.getElementById('navBackdrop');
   if (nav) nav.classList.remove('open');
   if (backdrop) backdrop.classList.remove('on');
-  go('revenue');
+  go(ROLE_DEFAULT_TAB[userRole] || 'revenue');
 }
 
 function go(tab) {
+  // Role gate — silently redirect to default tab if section is not allowed
+  if (userRole && !_canGo(tab)) {
+    const def = ROLE_DEFAULT_TAB[userRole] || 'students';
+    if (tab !== def) { toast(`⛔ Your role (${userRole}) cannot access this section.`); go(def); }
+    return;
+  }
   document.querySelectorAll('.sec').forEach(s => s.classList.remove('on'));
   document.querySelectorAll('.nlink').forEach(b => b.classList.remove('on'));
   const target = $(`sec-${tab}`); if (target) target.classList.add('on');
