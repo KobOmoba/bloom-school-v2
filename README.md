@@ -835,3 +835,18 @@ All `_resizeFeeImage(file, 1200)` calls changed to 800. The proven free-tier con
 3. Groq is sent a targeted prompt: *"Look ONLY for a Nigerian phone number in this image"*
 4. Only the Phone field is updated — everything else stays as-is
 5. If still not found: "Still couldn't read Phone — please type it manually"
+
+
+### 2026-08-05 (8) — Resize/token audit + handleScriptImage fix
+
+**Scan confirmed working:** Device test returned all 5 fields correctly — Name, Phone (07085369494), Class (BASIC 4), Gender (inferred Female), Fee (36000), DOB (02/19/2017). The 800px + 4096 token fix resolved the root cause.
+
+**Remaining inconsistencies found and fixed:**
+
+`scanExpenseReceipt()` and `scanPaymentReceipt()` still used `_resizeFeeImage(file, 1000)` — missed when the earlier pass standardised all resizes to 800px. Fixed to 800.
+
+`handleScriptImage()` used `max_tokens:300` without `reasoning_format:'hidden'` on `qwen/qwen3.6-27b` (the thinking model). Thinking tokens were consuming the 300-token budget before the response could be output. Fixed to `max_tokens:4096` + `reasoning_format:'hidden'` + system message for JSON-only output.
+
+**Left unchanged:** Finance AI chat (llama-3.3-70b-versatile text model) at `max_tokens:300` — correct for 3-4 sentence chat responses.
+
+**Cascade (dormant):** `_callHFGenericVision()` and `_callScanCascade()` inserted but not wired up. HuggingFace cascade to be activated when HF connectivity is confirmed working. Groq-only path unchanged.
