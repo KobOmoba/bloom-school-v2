@@ -1163,7 +1163,12 @@ function toggleEye(inputId, btn) {
       <button type="button" class="eye-btn" onclick="toggleEye('sf-pwd',this)" tabindex="-1">👁️</button>
     </div>
     <label>Role</label>
-    <select id="sf-role"><option>Teacher</option><option>Bursar</option><option>Head Teacher</option><option>Vice Principal</option><option>Admin</option><option>Sports Coach</option><option>Arts Teacher</option><option>Music Teacher</option></select>
+    <select id="sf-role" onchange="onRoleChange(this)">
+      <option value="Class Teacher">Class Teacher</option>
+      <option value="Subject Teacher">Subject Teacher</option>
+      <option value="Bursar">Bursar</option>
+      <option value="Principal">Principal</option>
+    </select>
     <button class="btn-brand" onclick="addStaff()">✅ Add Staff</button>
   </div>
 </div>
@@ -1314,7 +1319,7 @@ function toggleEye(inputId, btn) {
   </div>
 </div>
 
-<script src="app.js?v=20260806-b"></script>
+<script src="app.js?v=20260803-authkeyfix"></script>
 
 <!-- Class Attendance Modal -->
 <div id="class-att-modal" class="modal">
