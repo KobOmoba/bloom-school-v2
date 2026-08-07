@@ -1296,7 +1296,11 @@ async function doStaffLogin() {
     }
   }
   if (!staff) {
-    if (errEl) { errEl.textContent = 'Not recognised. Ask your Principal to check your staff record.'; errEl.style.display = 'block'; }
+    const emailFound = (SD.staff || []).find(s => (s.email || '').trim().toLowerCase() === email);
+    const msg = emailFound
+      ? '❌ Wrong password. Ask your Principal to reset it, or tap Forgot Password below.'
+      : '❌ Email not found in staff list. Ask your Principal to check your staff record.';
+    if (errEl) { errEl.textContent = msg; errEl.style.display = 'block'; }
     return;
   }
   currentStaff = staff; userRole = _normRole(staff.role || 'Class Teacher');
@@ -1395,12 +1399,26 @@ async function createStaffAccountV2(schoolId, email, password, staffData) {
 }
 async function staffLoginV2(schoolId, email, password) {
   const cred = await firebase.auth().signInWithEmailAndPassword(email, password);
-  const doc = await _staffDirColV2(schoolId).doc(cred.user.uid).get();
+  const uid  = cred.user.uid;
+  const doc  = await _staffDirColV2(schoolId).doc(uid).get();
+
   if (!doc.exists) {
+    // staff_directory write may have failed during addStaff — auto-heal from SD.staff
+    const rec = (SD.staff || []).find(s => (s.email || '').trim().toLowerCase() === email.toLowerCase());
+    if (rec) {
+      const entry = {
+        email, name: rec.name, role: rec.role,
+        assignedClass: rec.assignedClass || null,
+        assignedSubjects: rec.assignedSubjects || [],
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      };
+      try { await _staffDirColV2(schoolId).doc(uid).set(entry); } catch(e) { /* non-fatal */ }
+      return { uid, ...entry };
+    }
     await firebase.auth().signOut();
-    throw new Error('Signed in, but no staff record found for this account at this school.');
+    throw new Error('Firebase Auth OK but no staff record at this school. Ask your Principal to re-add your account.');
   }
-  return { uid: cred.user.uid, ...doc.data() };
+  return { uid, ...doc.data() };
 }
 async function loadStaffDirectoryV2(schoolId) {
   const snap = await _staffDirColV2(schoolId).get();
@@ -1445,6 +1463,15 @@ async function hydrateFromV2(schoolId) {
 // ── Staff account claim — staff member sets a password once, which creates
 // their real Firebase Auth account and links it via staff_directory.
 // Their legacy password login continues to work as a fallback.
+async function sendStaffPasswordReset(email) {
+  if (!email) { toast('Enter your email above first.'); return; }
+  try {
+    await firebase.auth().sendPasswordResetEmail(email.trim().toLowerCase());
+    toast('✅ Password reset email sent to ' + email + '. Check your inbox.');
+  } catch(e) {
+    toast('❌ ' + (e.message || 'Could not send reset email. Check the address.'));
+  }
+}
 async function claimStaffAccountV2(schoolId, email, newPassword) {
   const normEmail = (email || '').trim().toLowerCase();
   const staffRecord = (SD.staff || []).find(s => (s.email || '').trim().toLowerCase() === normEmail);
