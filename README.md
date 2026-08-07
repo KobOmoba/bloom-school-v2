@@ -882,3 +882,24 @@ Implementation:
 - `applyRoleRestrictions()` now hides any nav button whose `data-t` is NOT in the allowed set
 - `go(tab)` — role gate at entry: if tab not allowed, shows toast and redirects to role's default landing tab
 - `goDashboard()` — now uses `ROLE_DEFAULT_TAB[userRole]` instead of hardcoded `'revenue'` (prevents redirect loop for Class Teacher)
+
+
+### 2026-08-06 (3) — Role whitelist root cause fixed
+
+**Root cause identified:** The Add Staff modal dropdown had options `Teacher`, `Head Teacher`, `Vice Principal`, `Admin`, `Sports Coach`, `Arts Teacher`, `Music Teacher`. None matched `ROLE_TABS` keys (`Class Teacher`, `Subject Teacher`, `Bursar`, `Principal`). So Kehinde was stored with role `"Teacher"` → `ROLE_TABS["Teacher"]` = undefined → `null` → `_allowedTabs()` returned `null` → whitelist never applied → all tabs visible.
+
+**Fixes:**
+
+`ROLE_NORMALISE` map + `_normRole(r)` function — normalises any legacy or variant role string to the canonical key at runtime:
+- `teacher`, `class teacher` → `Class Teacher`
+- `subject teacher`, `arts teacher`, `music teacher`, `sports coach` → `Subject Teacher`
+- `bursar`, `accountant` → `Bursar`
+- `head teacher`, `vice principal`, `admin`, `principal` → `Principal`
+
+`_allowedTabs()` now calls `ROLE_TABS[_normRole(userRole)]` — any role string stored in Firestore now maps correctly without re-saving data.
+
+`userRole` normalised at all three login paths (Firebase Auth, legacy password, session restore) so it's always canonical after login.
+
+Add Staff dropdown updated to match canonical keys: `Class Teacher`, `Subject Teacher`, `Bursar`, `Principal`.
+
+**Build version badge** added to app header — visible after login, confirms which code version is running without needing DevTools.
