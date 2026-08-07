@@ -903,3 +903,29 @@ Implementation:
 Add Staff dropdown updated to match canonical keys: `Class Teacher`, `Subject Teacher`, `Bursar`, `Principal`.
 
 **Build version badge** added to app header — visible after login, confirms which code version is running without needing DevTools.
+
+
+### 2026-08-07 — Staff login fixes + Forgot Password + Production readiness audit
+
+**Issue:** Kehinde (staff) could not log in — "Not recognised" error.
+
+**Root cause:** `staffLoginV2` signs into Firebase Auth → reads `staff_directory/{uid}`. When `createStaffAccountV2` in `addStaff` created Firebase Auth but the Firestore write failed silently, the staff_directory doc didn't exist → signed out → threw → fell to legacy check → legacy check either found wrong hash or email mismatch → "Not recognised."
+
+**Fixes:**
+- `staffLoginV2` auto-heal: if Firebase Auth succeeds but staff_directory is missing, looks up the staff record in `SD.staff`, writes the missing staff_directory doc, returns successfully. No re-registration needed.
+- Better legacy error messages: distinguishes "wrong password" vs "email not found in staff list"
+- `sendStaffPasswordReset(email)` — calls `firebase.auth().sendPasswordResetEmail()`. Staff taps "🔑 Forgot password?" link under Enter as Staff, gets reset email in inbox.
+- "Forgot password? Send reset email" link added to staff login panel in index.html.
+
+**Production readiness audit — Step 2 complete ✅**
+
+All 7 Step 2 tests passed or fixed:
+1. ✅ App loads, Enter Portal responds
+2. ✅ Add student + OCR scan (all 5 fields: name, phone, class, fee ₦36,000, DOB)
+3. ✅ Scan to Fill Missing Fields in Edit Student modal
+4. ✅ Logout/re-login — Elizabeth persists (hydrateFromV2 confirmed as sole read path)
+5. ✅ Scores write + persist across logout (2 subjects, avg 93)
+6. ✅ Delete cascade fixed (flat scores now cleaned + subcollection batch delete)
+7. ✅ Staff role login + role-based nav whitelist working
+
+**Next:** Step 3 — Bayo publishes Firestore security rules in Firebase Console. Then Step 4 — port to production school-bloom.
