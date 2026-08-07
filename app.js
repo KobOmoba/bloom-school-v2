@@ -1181,7 +1181,17 @@ const ROLE_DEFAULT_TAB = {
   'Class Teacher': 'students', 'Subject Teacher': 'scorecard'
 };
 
-function _allowedTabs() { return ROLE_TABS[userRole] || null; }
+// Normalise legacy role strings → canonical ROLE_TABS keys
+const ROLE_NORMALISE = {
+  'teacher': 'Class Teacher', 'class teacher': 'Class Teacher',
+  'subject teacher': 'Subject Teacher', 'arts teacher': 'Subject Teacher',
+  'music teacher': 'Subject Teacher', 'sports coach': 'Subject Teacher',
+  'bursar': 'Bursar', 'accountant': 'Bursar',
+  'head teacher': 'Principal', 'vice principal': 'Principal',
+  'admin': 'Principal', 'principal': 'Principal',
+};
+function _normRole(r) { return ROLE_NORMALISE[(r||'').toLowerCase()] || r || 'Class Teacher'; }
+function _allowedTabs() { return ROLE_TABS[_normRole(userRole)] || null; }
 function _canGo(tab)    { const a = _allowedTabs(); return !a || a.has(tab); }
 
 function canSeeFees() { return ['Principal', 'Bursar'].includes(userRole); }
@@ -1267,7 +1277,7 @@ async function doStaffLogin() {
       name: v2Staff.name, email, role: v2Staff.role, assignedClass: v2Staff.assignedClass, assignedSubjects: v2Staff.assignedSubjects
     };
     staffRecord._v2Uid = v2Staff.uid;
-    currentStaff = staffRecord; userRole = v2Staff.role || staffRecord.role || 'Class Teacher';
+    currentStaff = staffRecord; userRole = _normRole(v2Staff.role || staffRecord.role || 'Class Teacher');
     localStorage.setItem('p_' + schoolId + '_staffSession', JSON.stringify(Object.assign({}, currentStaff, { schoolId })));
     _saveAuth(schoolId, email);
     const div = $('staff-login'); if (div) div.style.display = 'none';
@@ -1289,7 +1299,7 @@ async function doStaffLogin() {
     if (errEl) { errEl.textContent = 'Not recognised. Ask your Principal to check your staff record.'; errEl.style.display = 'block'; }
     return;
   }
-  currentStaff = staff; userRole = staff.role || 'Class Teacher';
+  currentStaff = staff; userRole = _normRole(staff.role || 'Class Teacher');
   localStorage.setItem('p_' + schoolId + '_staffSession', JSON.stringify(Object.assign({}, staff, { schoolId })));
   _saveAuth(schoolId, email);
   const div = $('staff-login'); if (div) div.style.display = 'none';
@@ -1680,7 +1690,7 @@ async function doLogin() {
     await hydrateFromV2(sid).catch(() => {});
     const fsSession = localStorage.getItem(`p_${sid}_staffSession`);
     if (fsSession) {
-      try { const sess = JSON.parse(fsSession); currentStaff = sess; userRole = sess.role || 'Principal'; startApp(); btn.textContent = '▶ Enter Portal'; btn.disabled = false; return; } catch (e) {}
+      try { const sess = JSON.parse(fsSession); currentStaff = sess; userRole = _normRole(sess.role || 'Principal'); startApp(); btn.textContent = '▶ Enter Portal'; btn.disabled = false; return; } catch (e) {}
     }
     if (SD.staff && SD.staff.length > 0) {
       btn.textContent = '▶ Enter Portal'; btn.disabled = false;
@@ -1728,6 +1738,9 @@ function startApp() {
   applyRoleRestrictions();
   updateLogoBadges(SD.config.logo);
   if (typeof renderBirthdays === 'function') renderBirthdays();
+  // Visible build version — confirms which code is running without needing DevTools
+  const vEl = document.getElementById('build-version');
+  if (vEl) vEl.textContent = 'v20260806-b';
 
   const bannerSub = $('banner-sub');
   if (bannerSub) {
