@@ -929,3 +929,141 @@ All 7 Step 2 tests passed or fixed:
 7. ✅ Staff role login + role-based nav whitelist working
 
 **Next:** Step 3 — Bayo publishes Firestore security rules in Firebase Console. Then Step 4 — port to production school-bloom.
+
+
+---
+
+## Step 3 — Firestore Security Rules (READY TO PUBLISH)
+
+### Why the old rules in this README were incomplete
+
+The original Phase 3 draft only covered the new subcollections. It was missing:
+1. The parent `schools/{schoolId}` document (needed for school bootstrap)
+2. Admin collections (`admin_approved_schools`, `public_ocr_keys`, etc.)
+3. The scores rule referenced `resource.data.subject` but `saveScoreV2` didn't store a `subject` field — now confirmed it does (`subject` and `term` both stored in every score document)
+
+### Complete production rules — paste these into Firebase Console → Firestore → Rules
+
+```
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helpers ─────────────────────────────────────────────────────
+    function authed() { return request.auth != null; }
+    function staffDoc(schoolId) {
+      return /databases/$(database)/documents/schools/$(schoolId)/staff_directory/$(request.auth.uid);
+    }
+    function isStaffOf(schoolId)   { return authed() && exists(staffDoc(schoolId)); }
+    function staffData(schoolId)   { return get(staffDoc(schoolId)).data; }
+    function myRole(schoolId)      { return staffData(schoolId).role; }
+    function myClass(schoolId)     { return staffData(schoolId).assignedClass; }
+    function mySubjects(schoolId)  { return staffData(schoolId).assignedSubjects; }
+    function isPrincipal(schoolId)     { return isStaffOf(schoolId) && myRole(schoolId) == 'Principal'; }
+    function isBursar(schoolId)        { return isStaffOf(schoolId) && myRole(schoolId) == 'Bursar'; }
+    function isClassTeacher(schoolId)  { return isStaffOf(schoolId) && myRole(schoolId) == 'Class Teacher'; }
+    function isSubjectTeacher(schoolId){ return isStaffOf(schoolId) && myRole(schoolId) == 'Subject Teacher'; }
+    function studentClass(schoolId, studentId) {
+      return get(/databases/$(database)/documents/schools/$(schoolId)/students/$(studentId)).data.class;
+    }
+
+    // ── Public OCR keys ─────────────────────────────────────────────
+    match /public_ocr_keys/{doc} {
+      allow read: if true;
+      allow write: if authed();
+    }
+
+    // ── Admin approved schools (school ID bootstrap — no student data)
+    match /admin_approved_schools/{doc} {
+      allow read: if true;
+      allow write: if authed();
+    }
+
+    // ── Admin collections (portal only) ─────────────────────────────
+    match /admin_settings/{doc}  { allow read, write: if authed(); }
+    match /admin_agents/{doc}    { allow read, write: if authed(); }
+    match /admin_deals/{doc}     { allow read, write: if authed(); }
+    match /admin_ledger/{doc}    { allow read, write: if authed(); }
+    match /admin_activity/{doc}  { allow read, write: if authed(); }
+    match /admin_cac/{doc}       { allow read, write: if authed(); }
+    match /v2_deals/{doc}        { allow read, write: if authed(); }
+
+    // ── School data ─────────────────────────────────────────────────
+    match /schools/{schoolId} {
+
+      // Parent document — public read needed for school login bootstrap
+      // (Principal may not yet have Firebase Auth). Write requires staff.
+      allow read:  if true;
+      allow write: if isStaffOf(schoolId);
+
+      // Staff directory
+      match /staff_directory/{uid} {
+        allow read:            if isPrincipal(schoolId) || (authed() && request.auth.uid == uid);
+        allow create:          if authed() && request.auth.uid == uid;
+        allow update, delete:  if isPrincipal(schoolId);
+      }
+
+      // Student profiles
+      match /students/{studentId} {
+        allow read: if isPrincipal(schoolId)
+                    || (isClassTeacher(schoolId) && myClass(schoolId) == resource.data.class)
+                    || isSubjectTeacher(schoolId)
+                    || isBursar(schoolId);
+        allow create:         if isPrincipal(schoolId) || isClassTeacher(schoolId);
+        allow update, delete: if isPrincipal(schoolId)
+                              || (isClassTeacher(schoolId) && myClass(schoolId) == resource.data.class);
+
+        // Fees — Principal and Bursar only
+        match /private/fees {
+          allow read, write: if isPrincipal(schoolId) || isBursar(schoolId);
+        }
+
+        // Scores — Class Teacher (own class), Subject Teacher (own subjects), Principal
+        match /scores/{scoreId} {
+          allow read: if isPrincipal(schoolId)
+                      || (isClassTeacher(schoolId) && myClass(schoolId) == studentClass(schoolId, studentId))
+                      || (isSubjectTeacher(schoolId) && resource.data.subject in mySubjects(schoolId));
+          allow write: if isPrincipal(schoolId)
+                       || (isClassTeacher(schoolId) && myClass(schoolId) == studentClass(schoolId, studentId))
+                       || (isSubjectTeacher(schoolId) && request.resource.data.subject in mySubjects(schoolId));
+        }
+      }
+    }
+  }
+}
+```
+
+### What each rule does
+
+**`public_ocr_keys`** — public read (any app user fetches Groq/HF keys from here). Write requires auth (portal sets them).
+
+**`admin_approved_schools`** — public read so the school app can look up a school ID during login bootstrap. No student data in this collection — only school name, config, and plan tier.
+
+**`admin_*` collections** — authenticated writes only (portal user). Covers deals, agents, ledger, activity log.
+
+**`schools/{schoolId}`** (parent document) — public read. This is required because the Principal's legacy password login happens before Firebase Auth is established — the app must read the school document to show the login screen. Writes require the user to be a staff member with Firebase Auth.
+
+**`staff_directory/{uid}`** — Principal sees all. Each staff member sees only their own record. Staff can create their own record (the Claim Account flow). Only Principal can update or delete.
+
+**`students/{studentId}`** — Principal sees all. Class Teacher sees only their assigned class. Subject Teacher can read all student names (needed to enter scores). Bursar can read all names (needed for fee ledger). Create restricted to Principal and Class Teacher. Delete/update restricted to Principal or Class Teacher for their own class.
+
+**`private/fees`** — Principal and Bursar only.
+
+**`scores/{scoreId}`** — Principal sees all. Class Teacher reads/writes their own class. Subject Teacher reads/writes only their assigned subjects (enforced via `resource.data.subject in mySubjects()` — the `subject` field is now stored in every score document by `saveScoreV2`).
+
+### How to publish (Firebase Console on mobile or desktop)
+
+1. Go to `console.firebase.google.com`
+2. Select project `educationbloom-699ed`
+3. Firestore Database → **Rules** tab
+4. Delete the existing rules
+5. Paste the rules above
+6. Click **Publish**
+
+### Test immediately after publishing
+
+Log in as Principal → add a student → scores should save ✅  
+Log in as Class Teacher → check they can only see their class ✅  
+Log out → check unauthenticated reads of `public_ocr_keys` still work ✅
+
+After rules are confirmed working → proceed to **Step 4: port to production school-bloom**.
