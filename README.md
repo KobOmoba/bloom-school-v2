@@ -1067,3 +1067,24 @@ Log in as Class Teacher → check they can only see their class ✅
 Log out → check unauthenticated reads of `public_ocr_keys` still work ✅
 
 After rules are confirmed working → proceed to **Step 4: port to production school-bloom**.
+
+
+### 2026-08-08 — 4 fixes after Firestore rules went live
+
+**Root cause of Elizabeth disappearing:**
+`createUserWithEmailAndPassword()` in `addStaff` signs Firebase Auth in as the new staff member — replacing the Principal's session. Next time `hydrateFromV2` ran, it read the student subcollection as Kehinde (Basic 4 teacher). Elizabeth was in Basic 6 → 0 results → `SD.students = []` → student gone.
+
+**Fix 1 — `loadAllStudentsV2` class filter**
+Added optional `classFilter` param. Class Teacher queries now use `.where('class', '==', assignedClass)`. Without this, Firestore rejects the collection query (security rule requires `resource.data.class == myClass` which needs a matching where clause).
+
+**Fix 2 — `hydrateFromV2` empty-override protection**
+If subcollection returns 0 students with no class filter (auth issue or Principal without Firebase Auth), `SD.students` from `loadSchoolIntoSD` is preserved. Empty with a class filter is legitimate (no students in that class yet).
+
+**Fix 3 — `addStaff` Firebase Auth sign-out**
+After `createStaffAccountV2`, immediately calls `firebase.auth().signOut()`. Restores unauthenticated state so Principal's session is not replaced.
+
+**Fix 4 — Role context banner in Students view**
+`#stu-role-banner` shows "👤 Kehinde **Class Teacher** · Basic 4 only" above the student list. Hidden for Principal. Tells every staff member exactly what they're viewing.
+
+**Fix 5 — Principal silent Firebase Auth**
+After successful legacy Principal login, silently tries `signInWithEmailAndPassword` with the same credentials. If Principal has a Firebase Auth account, subcollection security rules work correctly. Fails silently if not.
