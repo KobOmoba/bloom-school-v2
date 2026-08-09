@@ -1259,6 +1259,13 @@ async function doPrincipalLogin() {
   currentStaff = principal; userRole = 'Principal';
   localStorage.setItem('p_' + schoolId + '_staffSession', JSON.stringify(Object.assign({}, principal, { role: 'Principal', schoolId })));
   _saveAuth(schoolId, principal.email || '');
+  // Silently attempt Firebase Auth so subcollection security rules work for Principal.
+  // Fails gracefully if Principal doesn't have a Firebase Auth account yet —
+  // the flat parent document (public read) still loads the school data.
+  if (principal.email) {
+    const pPlain = $('p-pwd')?.value || '';
+    firebase.auth().signInWithEmailAndPassword(principal.email, pPlain).catch(() => {});
+  }
   const div = $('staff-login'); if (div) div.style.display = 'none';
   startApp();
 }
@@ -1334,8 +1341,10 @@ function _staffDirColV2(schoolId) {
 }
 
 // ── Students (profile only — no fees, no scores) ──────────────────────────
-async function loadAllStudentsV2(schoolId) {
-  const snap = await _studentsColV2(schoolId).get();
+async function loadAllStudentsV2(schoolId, classFilter) {
+  let query = _studentsColV2(schoolId);
+  if (classFilter) query = query.where('class', '==', classFilter);
+  const snap = await query.get();
   return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 }
 async function saveStudentProfileV2(schoolId, student) {
@@ -1432,31 +1441,46 @@ async function loadStaffDirectoryV2(schoolId) {
 async function hydrateFromV2(schoolId) {
   if (!schoolId || SD.config?._demo) return;
   try {
-    const v2Students = await loadAllStudentsV2(schoolId);
+    // Class Teachers must filter by their class — this also makes the Firestore
+    // security rule satisfiable (rule requires resource.data.class == myClass,
+    // which requires a matching where() clause in the query).
+    const classFilter = (userRole === 'Class Teacher' && currentStaff?.assignedClass)
+      ? currentStaff.assignedClass : null;
+
+    const v2Students = await loadAllStudentsV2(schoolId, classFilter);
 
     const students = [];
-    const scores = {};
+    const scores   = {};
     for (const s of v2Students) {
-      const fees = await loadStudentFeesV2(schoolId, s.id);
+      const fees          = await loadStudentFeesV2(schoolId, s.id);
       const studentScores = await loadStudentScoresV2(schoolId, s.id);
       const student = {
         _v2Id: s.id, name: s.name, phone: s.phone || '', class: s.class || '',
-        totalFee: fees.totalFee || 0, paid: fees.paid || 0, paymentHistory: fees.paymentHistory || []
+        totalFee: fees.totalFee || 0, paid: fees.paid || 0,
+        paymentHistory: fees.paymentHistory || []
       };
       students.push(student);
-      const sid = s.id; // V2 doc id doubles as the sid key for score lookups, consistent with s.id||idx elsewhere
+      const sid = s.id;
       Object.keys(studentScores).forEach(term => {
         if (!scores[term]) scores[term] = {};
         scores[term][sid] = studentScores[term];
       });
     }
-    SD.students = students;
-    SD.scores = scores;
-    saveLocal('students', SD.students);
-    saveLocal('scores', SD.scores);
-    console.log(`✅ Hydrated ${students.length} students from V2 structure`);
-  } catch (e) {
-    console.warn('hydrateFromV2 failed, keeping old flat data:', e.message);
+
+    // Only replace existing data if:
+    // a) We got students back, OR
+    // b) A class filter was applied (0 students in that class is a legitimate result)
+    if (students.length > 0 || classFilter !== null) {
+      SD.students = students;
+      SD.scores   = scores;
+      saveLocal('students', SD.students);
+      saveLocal('scores', SD.scores);
+    }
+    // If 0 results with no filter (auth issue or permission denied returned []),
+    // keep whatever loadSchoolIntoSD already loaded from the flat parent document.
+    console.log(`✅ Hydrated ${students.length} students from V2 (filter: ${classFilter || 'none'})`);
+  } catch(e) {
+    console.warn('hydrateFromV2 failed — keeping flat data:', e.message);
   }
 }
 
@@ -2203,6 +2227,19 @@ function renderStudentList() {
     cls = assignedCls;
     const clsSel = $('stu-class');
     if (clsSel) { clsSel.value = assignedCls; clsSel.disabled = true; }
+  }
+
+  // Role context banner — shows who is logged in and what they can see
+  const bannerEl = $('stu-role-banner');
+  if (bannerEl) {
+    if (userRole && userRole !== 'Principal') {
+      const name = currentStaff?.name || userRole;
+      const classInfo = assignedCls ? ` · ${assignedCls} only` : '';
+      bannerEl.style.display = 'flex';
+      bannerEl.innerHTML = `<span style="font-size:0.78rem;color:var(--sub);">👤 ${name} <strong>${userRole}</strong>${classInfo}</span>`;
+    } else {
+      bannerEl.style.display = 'none';
+    }
   }
 
   if (q) list = list.filter(s => s.name.toLowerCase().includes(q) || (s.phone || '').includes(q));
@@ -4220,6 +4257,9 @@ async function addStaff() {
     try {
       const uid = await createStaffAccountV2(schoolId, email, pwd, { name, role, assignedClass: assignedClass||null, assignedSubjects });
       SD.staff[SD.staff.length-1]._v2Uid = uid;
+      // createUserWithEmailAndPassword signs in as the new staff member — sign back out
+      // so the Principal's session is not replaced by the newly created account.
+      try { await firebase.auth().signOut(); } catch(e) {}
     } catch (e) { console.warn('addStaff Firebase Auth failed — legacy login still works:', e.message); }
   }
   await SQ.push('staff', SD.staff);
