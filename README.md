@@ -1,5 +1,25 @@
 # bloom-school-v2
 
+## 📍 Current Position — 2026-08-09
+
+### ✅ STEP 4 COMPLETE — Ported verbatim to production School-Bloom
+
+All code ported code-for-code from this sandbox to `School-Bloom` production on 2026-08-09.
+Files ported: `app.js` (8,384 lines), `index.html`, `style.css`.
+`sw.js` not ported (v2 has SW disabled; production `sw.js` CACHE_NAME bumped separately).
+
+**This sandbox remains the active development environment.**
+Any new feature built here → prove → port verbatim to School-Bloom.
+
+### ✅ STEP 1 — Complete
+### ✅ STEP 2 — Complete (all 7 device tests passed)
+### ✅ STEP 3 — Complete (Firestore security rules published by Bayo — confirmed via screenshot 2026-08-09)
+### ✅ STEP 4 — Complete (port to production executed 2026-08-09)
+
+---
+
+# bloom-school-v2
+
 ## Latest Update — 2026-08-03 — Fixed: Claim Account failing with auth/network-request-failed
 
 **Symptom:** `createStaffAccountV2()` / `claimStaffAccountV2()` (the
