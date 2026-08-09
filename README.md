@@ -1088,3 +1088,62 @@ After `createStaffAccountV2`, immediately calls `firebase.auth().signOut()`. Res
 
 **Fix 5 — Principal silent Firebase Auth**
 After successful legacy Principal login, silently tries `signInWithEmailAndPassword` with the same credentials. If Principal has a Firebase Auth account, subcollection security rules work correctly. Fails silently if not.
+
+
+---
+
+## 📍 Current Position — 2026-08-07
+
+### ✅ STEP 1 — Complete
+Migration removed, V2 subcollections are the sole data model. All writes primary-awaited. `hydrateFromV2` is the only read path. `v2_schools` → `schools` everywhere. No dual-write, no migration machinery.
+
+### ✅ STEP 2 — Complete (all 7 tests passed on device)
+| Test | Result |
+|---|---|
+| App loads, Enter Portal responds | ✅ |
+| Add student + OCR scan (name, phone, class, fee ₦36,000, DOB) | ✅ |
+| Scan to Fill Missing Fields in Edit Student modal | ✅ |
+| Logout / re-login — data persists (hydrateFromV2 confirmed) | ✅ |
+| Scores write + persist across logout (2 subjects, avg 93) | ✅ |
+| Delete cascade — student + flat scores + subcollection docs all gone | ✅ Fixed |
+| Staff claim account + role-based nav whitelist | ✅ Fixed |
+
+### ⏳ STEP 3 — Awaiting Bayo action
+Publish Firestore security rules in Firebase Console.
+
+**Rules are written and ready** — see the Step 3 section above in this README.
+
+How to publish:
+1. `console.firebase.google.com` → project `educationbloom-699ed`
+2. Firestore Database → **Rules** tab
+3. Delete all existing rules
+4. Paste the complete rules from the Step 3 section above
+5. Click **Publish**
+
+Test after publishing:
+- Principal login → add student, enter scores → must work
+- Class Teacher login → must only see their assigned class
+- OCR scan → must still load Groq key from `public_ocr_keys`
+
+### ⏳ STEP 4 — Port to production `school-bloom` (after Step 3 confirmed)
+Once security rules are confirmed working:
+
+1. Download `app.js`, `index.html`, `style.css` from `bloom-school-v2`
+2. Copy into `school-bloom` repo replacing existing files
+3. In `app.js` — restore real `_isPremium()` check: remove `return true` bypass, replace with `return (SD.config && SD.config.plan === 'premium') || (window._demoMode === true)`
+4. Bump `CACHE_NAME` in `sw.js`
+5. Bump `?v=` on `app.js` in `index.html`
+6. Push and verify on device that production URL loads new code
+
+### 🔮 After Step 4 — What's still deferred
+- **HuggingFace cascade** — `_callHFGenericVision` and `_callScanCascade` are already in the code but dormant (nothing calls them yet). Wire up when HF connectivity is confirmed.
+- **OCR Service (PaddleOCR VPS)** — `edubloom-ocr-service` is built and ready. Bayo provisions Oracle Cloud free VM, runs `deploy.sh`, adds the URL to Firestore `admin_settings/main.ocrServiceUrl`. No code changes needed.
+- **New OCR schemas with UI** — subjects, staff, alumni, expenses, sports_roster schemas are registered in `OCR_SCHEMAS` and ready. Only need UI buttons wired up.
+- **Delete old `v2_schools` collection** — now orphaned. Delete from Firebase Console to keep Firestore clean.
+- **Delete second Firebase web app registration** (`appId: 0f9d338f`) — now orphaned after API key consolidation. Delete from Firebase Console → Project Settings → Your Apps.
+- **Firebase Auth for Principal** — Principal currently uses legacy password or portal Firebase Auth. Until Principal has a real Firebase Auth account in the school app, the parent `schools/{schoolId}` document must remain publicly readable. Once Principal claims an account, tighten the rules.
+
+### 🚫 Known non-issues (intentional)
+- `llama-3.3-70b-versatile` at `max_tokens:300` — correct, this is a text chat model not a vision call
+- `schools/{schoolId}` parent doc is publicly readable — intentional, required for login bootstrap until Principal has Firebase Auth
+- `admin_approved_schools` publicly readable — intentional, contains no student personal data, needed for school ID lookup
