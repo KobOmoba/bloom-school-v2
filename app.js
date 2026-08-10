@@ -4825,7 +4825,7 @@ async function _groqScoreOCR(b64, mime, prompt){
   let r;
   try {
     r=await fetch('https://api.groq.com/openai/v1/chat/completions',{method:'POST',signal:ctrl.signal,headers:{'Content-Type':'application/json','Authorization':'Bearer '+groqKey},body:JSON.stringify({
-      model: GROQ_OCR_MODEL, temperature:0.2, max_tokens: 4096,
+      model: GROQ_OCR_MODEL, temperature:0.2, max_tokens: 4096, reasoning_format:'hidden',
       messages:[{role:'user',content:[{type:'image_url',image_url:{url:'data:'+mime+';base64,'+b64}},{type:'text',text:prompt}]}]
     })});
   } finally { clearTimeout(timer); }
