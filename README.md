@@ -1,5 +1,39 @@
 # bloom-school-v2
 
+## 📍 Current Position — 2026-08-10
+
+### ✅ Steps 1–4 complete
+### 🔴 Firestore rules correction in progress (see bloom-portal README)
+
+Step 3 rules broke portal + agent app — `authed()` used on admin collections
+that have no Firebase Auth. Corrected rules issued 2026-08-10. Bayo must publish.
+
+The corrected rules keep strict auth ONLY on the subcollections that hold
+real student data (`staff_directory`, `students`, `private/fees`, `scores`).
+All admin business collections and the school top-level doc are open.
+
+---
+
+## Previous Position — 2026-08-09
+
+### ✅ STEP 4 COMPLETE — Ported verbatim to School-Bloom production
+
+All code ported code-for-code from this sandbox to `School-Bloom` on 2026-08-09.
+Files: app.js (8,384 lines), index.html, style.css.
+sw.js not ported (v2 has SW disabled; production sw.js CACHE_NAME bumped separately).
+
+This sandbox remains the active development environment.
+Any new feature built here → prove → port verbatim to School-Bloom.
+
+### ✅ STEP 1 — Complete
+### ✅ STEP 2 — Complete (all 7 device tests passed)
+### ✅ STEP 3 — Complete (rules published 2026-08-09 — correction issued 2026-08-10)
+### ✅ STEP 4 — Complete (port to production executed 2026-08-09)
+
+---
+
+# bloom-school-v2
+
 ## 📍 Current Position — 2026-08-09
 
 ### ✅ STEP 4 COMPLETE — Ported verbatim to production School-Bloom
