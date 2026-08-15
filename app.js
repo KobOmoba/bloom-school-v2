@@ -998,12 +998,22 @@ const SQ = {
   },
   async silentPull() {
     if (window._demoMode || !db || !schoolId) return;
+    // Security fix: never overwrite sensitive keys from the flat parent doc.
+    // V2 subcollections are authoritative for student/score/fee/attendance data.
+    // Without this guard a student who can write the parent doc (allow write: if true)
+    // could inject false scores/fees into memory via silentPull, causing wrong data
+    // to display and print on report cards. Only config-level keys are pulled here.
+    const SUBCOL_KEYS = new Set([
+      'students','scores','attendance','staff','expenses',
+      'health','arts','sports','music','alumni','socialPages','commsLog','affective'
+    ]);
     try {
       const doc = await db.collection('schools').doc(schoolId).get();
       if (!doc.exists) return;
       const d = doc.data();
       const pendingKeys = new Set(this.q.map(x => x.key));
       Object.keys(d).forEach(k => {
+        if (SUBCOL_KEYS.has(k)) return; // V2 subcollections are authoritative — skip flat copy
         if (!pendingKeys.has(k)) {
           SD[k] = d[k];
           localStorage.setItem(`p_${schoolId}_${k}`, JSON.stringify(d[k]));
@@ -1012,7 +1022,7 @@ const SQ = {
       if (typeof renderBanner === 'function') renderBanner();
       if (typeof renderRevenue === 'function' && $('sec-revenue')?.classList.contains('on')) renderRevenue();
       if (typeof renderBirthdays === 'function') renderBirthdays();
-      console.log('✅ Silent pull complete from Firestore');
+      console.log('✅ Silent pull complete (config keys only)');
     } catch (e) { console.warn('Silent pull failed (offline?):', e.message); }
   }
 };
