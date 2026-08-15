@@ -63,6 +63,29 @@
 .subj-chip{display:inline-flex;align-items:center;gap:4px;background:var(--s2);border:1px solid var(--border);border-radius:20px;padding:3px 10px 3px 10px;font-size:0.74rem;font-weight:600;color:var(--text);}
 .chip-del{background:none;border:none;color:var(--danger);font-size:1rem;cursor:pointer;padding:0;line-height:1;margin-left:2px;font-weight:700;}
 
+
+/* Nav group labels */
+.nav-group-label {
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  color: var(--sub);
+  opacity: 0.55;
+  padding: 0.55rem 0.75rem 0.15rem;
+  text-transform: uppercase;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Profile tabs */
+.profile-tab {
+  background: var(--s2); border: 1px solid var(--border); border-radius: 8px;
+  padding: 0.4rem 0.75rem; font-size: 0.78rem; font-weight: 600; cursor: pointer;
+  color: var(--sub); white-space: nowrap; transition: background 0.15s;
+}
+.profile-tab.active {
+  background: var(--brand); color: #fff; border-color: var(--brand);
+}
 </style>
 <script>
 // Eye toggle — defined here so it works even if app.js has an error
@@ -105,7 +128,7 @@ function toggleEye(inputId, btn) {
 <div id="login" class="login" style="display:flex;">
   <div class="lbox">
     <div class="lbox-logo">🌸 Educational Bloom</div>
-    <div class="lbox-sub">School Management Portal · AariNAT Company</div>
+    <div class="lbox-sub" style="font-weight:800;letter-spacing:0.04em;color:#a5f3fc;">GIVE YOUR SCHOOL THE PREMIUM EXPERIENCE</div>
     <label>School ID</label>
     <input type="text" id="l-school" placeholder="e.g. BLOOM-ABK0042" autocapitalize="characters" 
       oninput="this.value=this.value.toUpperCase()" 
@@ -210,7 +233,7 @@ function toggleEye(inputId, btn) {
       </div>
     </div>
     <div style="display:flex;align-items:center;gap:7px;">
-      <span id="planBadge" class="plan-badge plan-basic">Basic</span>
+      <span id="planBadge" class="plan-badge plan-premium">Premium</span>
       <span id="sync" class="sdot sd-off">● Offline</span>
       <button class="btn-sm btn-ghost" onclick="logout()">Exit</button>
     </div>
@@ -286,16 +309,11 @@ function toggleEye(inputId, btn) {
       <div class="card">
         <div class="ct">👥 School Staff</div>
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
-          <span id="staff-count" style="font-size:0.8rem;color:var(--sub);">0/3 used (Basic)</span>
+          <span id="staff-count" style="font-size:0.8rem;color:var(--sub);">0/3 used</span>
           <button class="btn-brand btn-sm" onclick="openM('add-staff-modal')">➕ Add Staff</button>
         </div>
         <div id="staff-list"></div>
-        <div id="staff-upgrade" class="upgrade-lock" style="display:none;">
-          <p style="font-size:0.8rem;font-weight:700;color:#9a3412;">⚠️ Staff limit reached (3/3)</p>
-          <p style="font-size:0.72rem;color:#c2410c;margin:0.4rem 0 0.75rem;">Upgrade to Premium for unlimited staff.</p>
-          <button class="btn-brand" onclick="openUpgradeModal()">✨ Upgrade to Premium</button>
-        </div>
-      </div>
+  </div>
     </section>
 
     <!-- 4. SPORTS -->
@@ -391,26 +409,92 @@ function toggleEye(inputId, btn) {
     <!-- 10. FINANCE AI -->
     <section id="sec-finance" class="sec">
       <div class="card" style="border-left:4px solid #8b5cf6;">
-        <div class="ct">🤖 Finance AI Advisor</div>
-        <div id="finance-empty" class="ai-empty">
-          <div class="ai-icon">📊</div>
-          <h4 style="color:var(--sub);margin-bottom:0.5rem;">No Financial Data Yet</h4>
-          <p style="font-size:0.82rem;color:var(--sub);margin-bottom:0.75rem;">Upload a CSV with your school's income and expenses to get AI-powered insights.</p>
-          <button class="btn-brand" onclick="$('finance-csv').click()">📤 Upload Financial Data CSV</button>
-          <input type="file" id="finance-csv" accept=".csv,.xlsx,.xls,.txt,*/*" style="display:none;" onchange="handleFinanceUpload(event)">
-          <p style="font-size:0.72rem;color:var(--sub);margin-top:0.5rem;">CSV columns: Date, Description, Amount, Type (income/expense)</p>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem;">
+          <div class="ct" style="margin-bottom:0;">💰 Finance AI Advisor</div>
+          <span class="plan-badge plan-premium" style="font-size:0.65rem;">✨ PREMIUM</span>
         </div>
+
+        <!-- Progress bar — always visible when setup is in progress -->
+        <div id="fsa-progress-wrap" style="margin-bottom:0.75rem;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">
+            <span id="fsa-bar-label" style="font-size:0.7rem;color:var(--sub);">Finance AI setup</span>
+            <button onclick="FSA.start()" style="font-size:0.68rem;background:none;border:none;color:var(--brand);cursor:pointer;padding:0;">▶ Run Setup</button>
+          </div>
+          <div style="background:var(--border);border-radius:4px;height:5px;">
+            <div id="fsa-bar" style="background:linear-gradient(90deg,#8b5cf6,#3b82f6);height:5px;border-radius:4px;width:0%;transition:width 0.4s;"></div>
+          </div>
+        </div>
+
+        <!-- SETUP AGENT — shown during setup conversation -->
+        <div id="finance-setup" style="display:none;">
+          <div id="fsa-chat" style="max-height:340px;overflow-y:auto;margin-bottom:0.75rem;padding-right:2px;"></div>
+          <div style="display:flex;gap:6px;">
+            <input id="fsa-input" type="text" placeholder="Type your answer here…"
+              style="flex:1;font-size:0.85rem;"
+              onkeydown="if(event.key==='Enter')FSA.handleAnswer()">
+            <button class="btn-brand" onclick="FSA.handleAnswer()" style="padding:0.5rem 1rem;white-space:nowrap;">Send →</button>
+          </div>
+          <button class="btn-ghost" style="margin-top:0.5rem;font-size:0.75rem;" onclick="FSA._showDashboard()">Skip setup — show dashboard</button>
+        </div>
+
+        <!-- EMPTY STATE — no data and setup not started -->
+        <div id="finance-empty" class="ai-empty" style="display:none;">
+          <div class="ai-icon">📊</div>
+          <h4 style="color:var(--sub);margin-bottom:0.4rem;">Finance AI Ready to Set Up</h4>
+          <p style="font-size:0.82rem;color:var(--sub);margin-bottom:0.75rem;">Let me ask you a few quick questions to understand your school's finances — no forms, no confusion.</p>
+          <button class="btn-brand" onclick="FSA.start()">▶ Start Finance Setup</button>
+        </div>
+
+        <!-- ANALYSIS DASHBOARD — shown when setup complete or data exists -->
         <div id="finance-analysis" style="display:none;">
+          <!-- Live summary stats -->
           <div class="stats" style="margin-bottom:0.65rem;">
-            <div class="stat"><div class="sn" id="ai-projection" style="font-size:1rem;">₦0</div><div class="sl">Next Term Projection</div></div>
-            <div class="stat"><div class="sn" id="ai-anomalies" style="color:var(--danger);">0</div><div class="sl">Large Transactions</div></div>
+            <div class="stat"><div class="sn" id="ai-projection" style="font-size:1rem;">₦0</div><div class="sl">Fee Target</div></div>
+            <div class="stat"><div class="sn" id="ai-anomalies" style="color:var(--danger);">0</div><div class="sl">Large Expenses</div></div>
           </div>
           <div class="ai-rec" id="ai-recommendation">Analysing your data...</div>
-          <div id="ai-chat-area" style="margin-top:0.65rem;"></div>
-          <label style="margin-top:0.5rem;">Ask the AI a question about your finances</label>
-          <input type="text" id="ai-question" placeholder="e.g. How can I increase collection rate?">
-          <button class="btn-brand" onclick="askFinanceAI()">💬 Ask AI</button>
-          <button class="btn-ghost" style="margin-top:0.4rem;" onclick="$('finance-csv').click()">📤 Re-upload Data</button>
+
+          <!-- Quick financial health cards -->
+          <div id="finance-health-cards" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0.65rem 0;"></div>
+
+          <!-- Chat with Finance AI -->
+          <div id="ai-chat-area" style="max-height:220px;overflow-y:auto;margin:0.65rem 0;"></div>
+          <div style="display:flex;gap:6px;margin-top:0.5rem;">
+            <input type="text" id="ai-question"
+              placeholder="e.g. Can I pay salaries this month?"
+              style="flex:1;font-size:0.82rem;"
+              onkeydown="if(event.key==='Enter')askFinanceAI()">
+            <button class="btn-brand" onclick="askFinanceAI()" style="padding:0.5rem 0.9rem;white-space:nowrap;">Ask →</button>
+          </div>
+
+          <!-- Suggested questions — four one-tap prompts -->
+          <div style="margin-top:0.6rem;">
+            <div style="font-size:0.68rem;font-weight:700;color:var(--sub);letter-spacing:0.06em;text-transform:uppercase;margin-bottom:0.35rem;">Quick questions — tap to ask</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+              <button onclick="askFinanceQ('Who are my top defaulters and exactly how much does each one owe?')"
+                style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.25);border-radius:9px;padding:9px 10px;font-size:0.78rem;font-weight:700;color:#ef4444;cursor:pointer;text-align:left;line-height:1.3;">
+                🔴 Top defaulters<br><span style="font-weight:400;font-size:0.68rem;color:var(--sub);">Who owes the most?</span>
+              </button>
+              <button onclick="askFinanceQ('Can I pay staff salaries this month? Show the exact numbers — collections vs payroll obligation.')"
+                style="background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.25);border-radius:9px;padding:9px 10px;font-size:0.78rem;font-weight:700;color:#22c55e;cursor:pointer;text-align:left;line-height:1.3;">
+                💸 Can I pay salaries?<br><span style="font-weight:400;font-size:0.68rem;color:var(--sub);">Collections vs payroll</span>
+              </button>
+              <button onclick="askFinanceQ('Which class has the worst fee collection rate and what should I do about it?')"
+                style="background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.25);border-radius:9px;padding:9px 10px;font-size:0.78rem;font-weight:700;color:#f59e0b;cursor:pointer;text-align:left;line-height:1.3;">
+                📚 Worst-paying class<br><span style="font-weight:400;font-size:0.68rem;color:var(--sub);">Which class to chase first?</span>
+              </button>
+              <button onclick="askFinanceQ('What is my net cash position after all salaries and expenses? Will I have a surplus or deficit?')"
+                style="background:rgba(59,130,246,0.08);border:1px solid rgba(59,130,246,0.25);border-radius:9px;padding:9px 10px;font-size:0.78rem;font-weight:700;color:#3b82f6;cursor:pointer;text-align:left;line-height:1.3;">
+                📊 Net position<br><span style="font-weight:400;font-size:0.68rem;color:var(--sub);">Surplus or deficit?</span>
+              </button>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:6px;margin-top:0.65rem;">
+            <button class="btn-ghost" style="flex:1;font-size:0.75rem;" onclick="FSA.start()">🔄 Update Setup Info</button>
+            <button class="btn-ghost" style="flex:1;font-size:0.75rem;" onclick="$('finance-csv').click()">📤 Import Bank Statement</button>
+          </div>
+          <input type="file" id="finance-csv" accept=".csv,.xlsx,.xls,.txt,*/*" style="display:none;" onchange="handleFinanceUpload(event)">
         </div>
       </div>
     </section>
@@ -889,9 +973,7 @@ function toggleEye(inputId, btn) {
         <div id="faq-list">
           <details style="margin-bottom:0.5rem;"><summary style="cursor:pointer;font-weight:600;font-size:0.85rem;padding:0.4rem 0;">How do I add students?</summary><p style="font-size:0.8rem;color:var(--sub);padding:0.5rem 0;">Go to Students tab → tap ➕ Add Student. Or tap CSV Import to upload many at once. CSV format: Name, Phone, Class, Fee.</p></details>
           <details style="margin-bottom:0.5rem;"><summary style="cursor:pointer;font-weight:600;font-size:0.85rem;padding:0.4rem 0;">How do I generate a report card?</summary><p style="font-size:0.8rem;color:var(--sub);padding:0.5rem 0;">Go to Students → tap a student → tap Scores tab → enter CA and Exam scores → tap Report Card tab → tap Print.</p></details>
-          <details style="margin-bottom:0.5rem;"><summary style="cursor:pointer;font-weight:600;font-size:0.85rem;padding:0.4rem 0;">Why is my data not syncing?</summary><p style="font-size:0.8rem;color:var(--sub);padding:0.5rem 0;">Check your internet connection. The app works offline and syncs automatically when connected. Look at the dot in the top header — green means online.</p></details>
-          <details><summary style="cursor:pointer;font-weight:600;font-size:0.85rem;padding:0.4rem 0;">How do I upgrade to Premium?</summary><p style="font-size:0.8rem;color:var(--sub);padding:0.5rem 0;">Go to Settings tab → tap Upgrade to Premium → contact AariNAT via WhatsApp to arrange payment.</p></details>
-        </div>
+          <details style="margin-bottom:0.5rem;"><summary style="cursor:pointer;font-weight:600;font-size:0.85rem;padding:0.4rem 0;">Why is my data not syncing?</summary><p style="font-size:0.8rem;color:var(--sub);padding:0.5rem 0;">Check your internet connection. The app works offline and syncs automatically when connected. Look at the dot in the top header — green means online.</p></details></div>
       </div>
     </section>
 
@@ -931,8 +1013,7 @@ function toggleEye(inputId, btn) {
           <button class="btn-brand" style="width:100%;margin-bottom:0.5rem;background:linear-gradient(135deg,#7c3aed,#2563eb);" onclick="document.getElementById('subj-scan-input').click()">📷 Scan Curriculum/Subject List</button>
           <div id="subj-scan-fb" style="display:none;font-size:0.78rem;color:var(--sub);margin-bottom:0.5rem;text-align:center;"></div>
         </div>
-        <div id="subj-premium-nudge" style="display:none;background:linear-gradient(135deg,#7c3aed,#2563eb);border-radius:10px;padding:0.6rem;text-align:center;font-size:0.76rem;margin-bottom:0.6rem;">⭐ Upgrade to Premium to scan a subject list/timetable instead of typing each one</div>
-        <div id="subj-chips" style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:0.5rem;min-height:28px;"></div>
+  <div id="subj-chips" style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:0.5rem;min-height:28px;"></div>
         <div style="display:flex;gap:0.4rem;margin-bottom:0.4rem;">
           <input type="text" id="new-subj-inp" placeholder="Add subject…" style="flex:1;margin:0;font-size:0.82rem;" onkeydown="if(event.key==='Enter'){event.preventDefault();addSubjectFromInput();}">
           <button class="btn-brand btn-sm" onclick="addSubjectFromInput()">+ Add</button>
@@ -987,10 +1068,8 @@ function toggleEye(inputId, btn) {
       </div>
 
       <div class="card" style="border-left:4px solid var(--warn);">
-        <div class="ct">Current Plan: <span id="settings-plan">Basic</span></div>
-        <p style="font-size:0.82rem;color:var(--sub);">Staff limit: <span id="settings-staff-limit">3</span> · Finance AI: <span id="settings-ai">Basic</span></p>
-        <button class="btn-brand" style="margin-top:0.65rem;" onclick="openUpgradeModal()">✨ Upgrade to Premium</button>
-      </div>
+        <div class="ct">Plan: <span id="settings-plan" style="color:#4ade80;font-weight:800;">✨ Premium</span></div>
+        <p style="font-size:0.82rem;color:var(--sub);">Staff limit: <span id="settings-staff-limit">3</span> · Finance AI: <span id="settings-ai" style="color:#4ade80;">Premium</span></p></div>
     </section>
 
 
@@ -1000,36 +1079,33 @@ function toggleEye(inputId, btn) {
           <div style="font-size:24px;">💳</div>
           <div>
             <div class="ct" style="margin:0;">BloomCollect</div>
-            <div style="font-size:0.68rem;color:#00C853;font-weight:700;letter-spacing:1px;text-transform:uppercase;">Powered by Kora · Online Fee Collection</div>
+            <div style="font-size:0.68rem;color:#00C853;font-weight:700;letter-spacing:1px;text-transform:uppercase;">Online Fee Collection · Powered by AariNAT</div>
           </div>
           <div id="bc-status-badge" style="margin-left:auto;font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px;background:rgba(255,82,82,0.1);color:#FF5252;">⚠️ Not Set Up</div>
         </div>
-        <p style="font-size:0.8rem;color:var(--sub);margin-bottom:0.75rem;line-height:1.55;">
-          Enable parents to pay school fees online via <strong>BloomCollect</strong>. A 2.5% processing fee applies per transaction (1.5% Kora + 1% AariNAT platform fee). Fees collected go directly into your school's bank account below.
-        </p>
+
+        <!-- HOW IT WORKS -->
+        <div style="background:rgba(0,200,83,0.06);border:1px solid rgba(0,200,83,0.2);border-radius:10px;padding:12px;margin-bottom:0.75rem;font-size:0.78rem;line-height:1.75;">
+          <div style="font-weight:800;margin-bottom:4px;color:#00C853;">💡 How BloomCollect Works</div>
+          <div>• You enter your school bank account below</div>
+          <div>• Parent owes ₦35,000 — they pay <b>₦35,875</b> (₦35,000 + 2.5%)</div>
+          <div>• Your school receives exactly <b>₦35,000</b> — nothing deducted</div>
+          <div>• 2.5% covers: 1.5% payment gateway + 1% AariNAT</div>
+          <div style="margin-top:4px;font-size:0.72rem;color:var(--sub);">Parents bear the small processing cost. Your school always collects its full fee.</div>
+        </div>
+
+        <!-- STEP 1 -->
+        <div style="font-weight:800;font-size:0.72rem;color:var(--sub);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:0.5rem;">Step 1 — Your School Bank Account</div>
         <label>Bank Name</label>
         <select id="set-bank-name" style="margin-bottom:0.5rem;">
           <option value="">— Select Bank —</option>
-          <option>Access Bank</option>
-          <option>Ecobank Nigeria</option>
-          <option>FCMB</option>
-          <option>Fidelity Bank</option>
-          <option>First Bank of Nigeria</option>
-          <option>GTBank</option>
-          <option>Heritage Bank</option>
-          <option>Keystone Bank</option>
-          <option>Kuda Bank</option>
-          <option>Moniepoint</option>
-          <option>Opay</option>
-          <option>Palmpay</option>
-          <option>Polaris Bank</option>
-          <option>Stanbic IBTC Bank</option>
-          <option>Sterling Bank</option>
-          <option>UBA</option>
-          <option>Union Bank</option>
-          <option>VFD Microfinance Bank</option>
-          <option>Wema Bank</option>
-          <option>Zenith Bank</option>
+          <option>Access Bank</option><option>Ecobank Nigeria</option><option>FCMB</option>
+          <option>Fidelity Bank</option><option>First Bank of Nigeria</option><option>GTBank</option>
+          <option>Heritage Bank</option><option>Keystone Bank</option><option>Kuda Bank</option>
+          <option>Moniepoint</option><option>Opay</option><option>Palmpay</option>
+          <option>Polaris Bank</option><option>Stanbic IBTC Bank</option><option>Sterling Bank</option>
+          <option>UBA</option><option>Union Bank</option><option>VFD Microfinance Bank</option>
+          <option>Wema Bank</option><option>Zenith Bank</option>
         </select>
         <label>Account Number <span style="font-size:0.68rem;color:var(--sub);font-weight:400;">(10-digit NUBAN)</span></label>
         <input type="text" id="set-bank-account" placeholder="0123456789" maxlength="10" inputmode="numeric" pattern="[0-9]{10}">
@@ -1038,12 +1114,54 @@ function toggleEye(inputId, btn) {
         <div id="bc-bank-status" style="font-size:0.75rem;margin:0.4rem 0 0.75rem;color:var(--sub);"></div>
         <button class="btn-money btn-sm" onclick="saveBankDetails()">💾 Save Bank Details</button>
         <button class="btn-ghost btn-sm" onclick="clearBankDetails()" style="margin-left:0.4rem;">🗑️ Clear</button>
+
+        <!-- STEP 2: GATEWAY PLACEHOLDER -->
+        <div style="margin-top:1rem;padding-top:0.75rem;border-top:1px solid var(--border);">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem;">
+            <div style="font-weight:800;font-size:0.72rem;color:var(--sub);letter-spacing:0.08em;text-transform:uppercase;">Step 2 — One-Tap Payment Links</div>
+            <span id="bc-gateway-badge" style="font-size:0.65rem;font-weight:800;padding:2px 8px;border-radius:20px;background:rgba(245,158,11,0.15);color:#f59e0b;">COMING SOON</span>
+          </div>
+          <p style="font-size:0.78rem;color:var(--sub);margin-bottom:0.65rem;line-height:1.6;">
+            When activated, parents receive a <b>payment link</b> via WhatsApp — they tap, pay by card or bank transfer, and your records update automatically. No CSV upload needed.
+          </p>
+          <div style="background:var(--s2);border-radius:8px;padding:10px 12px;font-size:0.78rem;line-height:1.6;">
+            <div style="font-weight:700;margin-bottom:4px;">How the fee split works:</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;text-align:center;margin-bottom:8px;">
+              <div style="background:var(--card);border-radius:7px;padding:7px;">
+                <div style="font-size:0.65rem;color:var(--sub);">Parent pays</div>
+                <div style="font-weight:800;color:#3b82f6;">Fee + 2.5%</div>
+              </div>
+              <div style="background:var(--card);border-radius:7px;padding:7px;">
+                <div style="font-size:0.65rem;color:var(--sub);">School gets</div>
+                <div style="font-weight:800;color:#22c55e;">Full fee ✓</div>
+              </div>
+              <div style="background:var(--card);border-radius:7px;padding:7px;">
+                <div style="font-size:0.65rem;color:var(--sub);">AariNAT gets</div>
+                <div style="font-weight:800;color:#8b5cf6;">1% always</div>
+              </div>
+            </div>
+            <div style="font-size:0.7rem;color:var(--sub);">🔐 Gateway activation is completed by AariNAT. Your bank details above are enough to start collecting via WhatsApp reminders today.</div>
+          </div>
+
+          <!-- Gateway config — shown when AariNAT activates -->
+          <div id="bc-gateway-form" style="display:none;margin-top:0.65rem;">
+            <label>Payment Gateway</label>
+            <select id="set-gateway" style="margin-bottom:0.5rem;">
+              <option value="paystack">Paystack (1.5% · most trusted)</option>
+              <option value="squad">Squad by GTBank (1% · best rate)</option>
+              <option value="monnify">Monnify (1% · best for transfers)</option>
+            </select>
+            <label>Gateway Public Key <span style="font-size:0.68rem;color:var(--sub);font-weight:400;">(safe to store — not the secret key)</span></label>
+            <input type="text" id="set-gateway-key" placeholder="pk_live_xxxxxxxxxxxx" style="font-family:monospace;font-size:0.8rem;">
+            <button class="btn-money btn-sm" style="margin-top:0.5rem;" onclick="saveGatewayDetails()">⚡ Activate Gateway</button>
+          </div>
+        </div>
       </div>
 
-    <!-- 16. OPPORTUNITIES -->
+<!-- 16. OPPORTUNITIES -->
     <section id="sec-opps" class="sec">
       <div class="card">
-        <div class="ct">🔍 Opportunity Scout <span class="plan-badge plan-premium" id="opp-plan-badge" style="display:none;">PREMIUM</span></div>
+        <div class="ct">🔍 Opportunity Scout</div>
         <p style="font-size:0.8rem;color:var(--sub);margin-bottom:0.65rem;">Scholarships, grants and competitions for Nigerian students and schools.</p>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.4rem;margin-bottom:0.65rem;">
           <select id="opp-cat" onchange="renderOpps()" style="margin:0;font-size:0.8rem;padding:0.5rem;">
@@ -1055,11 +1173,85 @@ function toggleEye(inputId, btn) {
           </select>
         </div>
         <div id="opps-list"></div>
-        <div id="opp-premium-cta" style="background:linear-gradient(135deg,#f0f9ff,#faf5ff);border:2px solid var(--brand);border-radius:12px;padding:1rem;text-align:center;margin-top:0.75rem;display:none;">
-          <strong>✨ Unlock Full Access</strong>
-          <p style="font-size:0.82rem;color:var(--sub);margin:0.4rem 0 0.75rem;">See eligibility details, apply directly, and get deadline reminders with Premium.</p>
-          <button class="btn-brand" onclick="openUpgradeModal()">Upgrade to Premium</button>
+  </div>
+    </section>
+
+  
+    <!-- STUDENT PROFILE PAGE -->
+    <section id="sec-profile" class="sec">
+      <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem;">
+        <button onclick="go('students')" style="background:none;border:none;color:var(--brand);font-size:1rem;cursor:pointer;padding:0;">← Students</button>
+        <div style="font-size:0.78rem;color:var(--sub);" id="profile-breadcrumb">Select a student</div>
+      </div>
+      <!-- Avatar + name block -->
+      <div class="card" style="display:flex;align-items:center;gap:1rem;padding:1rem;" id="profile-header-card">
+        <div id="profile-avatar" style="width:56px;height:56px;border-radius:50%;background:var(--brand);display:flex;align-items:center;justify-content:center;font-size:1.4rem;font-weight:800;color:#fff;flex-shrink:0;"></div>
+        <div style="flex:1;min-width:0;">
+          <div id="profile-name" style="font-size:1.05rem;font-weight:800;"></div>
+          <div id="profile-meta" style="font-size:0.78rem;color:var(--sub);margin-top:2px;"></div>
         </div>
+        <button id="profile-edit-btn" onclick="editStudentFromProfile()" style="background:var(--brand);color:#fff;border:none;border-radius:8px;padding:6px 12px;font-size:0.75rem;cursor:pointer;">✏️ Edit</button>
+      </div>
+      <!-- Profile tabs -->
+      <div style="display:flex;gap:4px;margin-bottom:0.65rem;overflow-x:auto;padding-bottom:2px;">
+        <button class="profile-tab active" data-ptab="fees" onclick="switchProfileTab('fees',this)">💰 Fees</button>
+        <button class="profile-tab" data-ptab="scores" onclick="switchProfileTab('scores',this)">📝 Scores</button>
+        <button class="profile-tab" data-ptab="attendance" onclick="switchProfileTab('attendance',this)">📅 Attendance</button>
+        <button class="profile-tab" data-ptab="swot" onclick="switchProfileTab('swot',this)">🧠 SWOT</button>
+      </div>
+      <div id="profile-tab-content"></div>
+    </section>
+
+    <!-- SCORES FULL PAGE -->
+    <section id="sec-scores" class="sec">
+      <div class="ct" style="margin-bottom:0.6rem;">📝 Subject Scores</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:0.65rem;">
+        <select id="sp-class" onchange="renderScoresPage()" style="flex:1;min-width:120px;font-size:0.82rem;"></select>
+        <select id="sp-subject" onchange="renderScoresPage()" style="flex:1;min-width:120px;font-size:0.82rem;"></select>
+        <select id="sp-term" onchange="renderScoresPage()" style="flex:1;min-width:100px;font-size:0.82rem;">
+          <option value="1">Term 1</option><option value="2">Term 2</option><option value="3">Term 3</option>
+        </select>
+      </div>
+      <div style="display:flex;gap:6px;margin-bottom:0.65rem;flex-wrap:wrap;">
+        <button class="btn-brand btn-sm" style="background:#0891b2;" onclick="go('students');openScoreOCR()">📸 Scan Scores</button>
+        <button class="btn-brand btn-sm" style="background:#059669;" onclick="exportScoresCSV()">⬇️ Export CSV</button>
+      </div>
+      <div id="scores-page-content"></div>
+    </section>
+
+    <!-- ATTENDANCE FULL PAGE -->
+    <section id="sec-attendance" class="sec">
+      <div class="ct" style="margin-bottom:0.6rem;">📅 Attendance</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:0.65rem;">
+        <select id="att-class-page" onchange="renderAttendancePage()" style="flex:1;font-size:0.82rem;"></select>
+        <input type="date" id="att-date-page" onchange="renderAttendancePage()"
+          style="flex:1;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:0.45rem 0.6rem;color:var(--text);font-size:0.82rem;">
+      </div>
+      <div id="attendance-page-content"></div>
+      <div style="margin-top:0.65rem;display:flex;gap:6px;">
+        <button class="btn-brand btn-sm" onclick="markAllPresent()">✅ All Present</button>
+        <button class="btn-ghost btn-sm" onclick="saveAttendancePage()">💾 Save</button>
+        <button class="btn-ghost btn-sm" onclick="exportAttendanceCSV()">⬇️ Export</button>
+      </div>
+    </section>
+
+    <!-- PAYROLL FULL PAGE -->
+    <section id="sec-payroll" class="sec">
+      <div class="ct" style="margin-bottom:0.6rem;">💸 Payroll</div>
+      <!-- Summary bar -->
+      <div class="card" id="payroll-summary" style="margin-bottom:0.65rem;"></div>
+      <!-- Staff salary list -->
+      <div class="card" style="margin-bottom:0.65rem;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem;">
+          <div style="font-weight:700;font-size:0.85rem;">Staff & Salaries</div>
+          <button class="btn-brand btn-sm" onclick="runPayroll()" id="run-payroll-btn">▶ Run Payroll</button>
+        </div>
+        <div id="payroll-staff-list"></div>
+      </div>
+      <!-- Payroll history -->
+      <div class="card">
+        <div style="font-weight:700;font-size:0.85rem;margin-bottom:0.5rem;">📋 Payroll History</div>
+        <div id="payroll-history"></div>
       </div>
     </section>
 
@@ -1074,24 +1266,37 @@ function toggleEye(inputId, btn) {
       </div>
       <span id="nav-school-name">Educational Bloom</span>
     </div>
+    <div class="nav-group-label">STUDENTS</div>
     <button class="nlink on" data-t="revenue" onclick="go('revenue')"><span class="ni">💰</span>Revenue</button>
     <button class="nlink" data-t="students" onclick="go('students')"><span class="ni">🎓</span>Students</button>
+    <button class="nlink" data-t="profile" onclick="go('profile')"><span class="ni">👤</span>Profile</button>
+    <button class="nlink" data-t="scores" onclick="go('scores')"><span class="ni">📝</span>Scores</button>
+    <button class="nlink" data-t="attendance" onclick="go('attendance')"><span class="ni">📅</span>Attendance</button>
+    <button class="nlink" data-t="scorecard" onclick="go('scorecard')"><span class="ni">📋</span>Report Card</button>
+
+    <div class="nav-group-label">STAFF & FINANCE</div>
     <button class="nlink" data-t="staff" onclick="go('staff')"><span class="ni">👥</span>Staff</button>
+    <button class="nlink" data-t="payroll" onclick="go('payroll')"><span class="ni">💸</span>Payroll</button>
+    <button class="nlink" data-t="expenses" onclick="go('expenses')"><span class="ni">📉</span>Expenses</button>
+    <button class="nlink" data-t="finance" onclick="go('finance')"><span class="ni">🤖</span>Finance AI</button>
+
+    <div class="nav-group-label">INSIGHTS</div>
+    <button class="nlink" data-t="analytics" onclick="go('analytics')"><span class="ni">📊</span>Analytics</button>
+    <button class="nlink" data-t="security" onclick="go('security')"><span class="ni">🔒</span>Security</button>
+    <button class="nlink" data-t="ai" onclick="go('ai');renderMorningAlertStatus();"><span class="ni">🤖</span>Agents</button>
+    <button class="nlink" data-t="opps" onclick="go('opps')"><span class="ni">🔍</span>Scout</button>
+
+    <div class="nav-group-label">EXTRAS</div>
     <button class="nlink" data-t="sports" onclick="go('sports')"><span class="ni">⚽</span>Sports</button>
     <button class="nlink" data-t="arts" onclick="go('arts')"><span class="ni">🎨</span>Arts</button>
     <button class="nlink" data-t="music" onclick="go('music')"><span class="ni">🎵</span>Music</button>
     <button class="nlink" data-t="health" onclick="go('health')"><span class="ni">🏥</span>Health</button>
     <button class="nlink" data-t="alumni" onclick="go('alumni')"><span class="ni">🎓</span>Alumni</button>
-    <button class="nlink" data-t="expenses" onclick="go('expenses')"><span class="ni">📉</span>Expenses</button>
-    <button class="nlink" data-t="finance" onclick="go('finance')"><span class="ni">🤖</span>Finance AI</button>
     <button class="nlink" data-t="comms" onclick="go('comms')"><span class="ni">📢</span>Comms</button>
-    <button class="nlink" data-t="analytics" onclick="go('analytics')"><span class="ni">📊</span>Analytics</button>
-    <button class="nlink" data-t="security" onclick="go('security')"><span class="ni">🔒</span>Security</button>
-    <button class="nlink" data-t="ai" onclick="go('ai');renderMorningAlertStatus();"><span class="ni">🤖</span>Agents</button>
+
+    <div class="nav-group-label">SYSTEM</div>
     <button class="nlink" data-t="support" onclick="go('support')"><span class="ni">❓</span>Support</button>
     <button class="nlink" data-t="settings" onclick="go('settings')"><span class="ni">⚙️</span>Settings</button>
-    <button class="nlink" data-t="scorecard" onclick="go('scorecard')"><span class="ni">📋</span>Scorecard</button>
-    <button class="nlink" data-t="opps" onclick="go('opps')"><span class="ni">🔍</span>Scout</button>
   </nav>
 </div>
 
@@ -1138,8 +1343,7 @@ function toggleEye(inputId, btn) {
       <button class="btn-brand" style="width:100%;margin-bottom:0.5rem;background:linear-gradient(135deg,#7c3aed,#2563eb);" onclick="document.getElementById('ns-scan-input').click()">📷 Scan Admission Form/ID</button>
       <div id="ns-scan-fb" style="display:none;font-size:0.78rem;color:var(--sub);margin-bottom:0.5rem;text-align:center;"></div>
     </div>
-    <div id="ns-premium-nudge" style="display:none;background:linear-gradient(135deg,#7c3aed,#2563eb);border-radius:10px;padding:0.6rem;text-align:center;font-size:0.76rem;margin-bottom:0.6rem;">⭐ Upgrade to Premium to scan admission forms instead of typing</div>
-    <label>Full Name</label><input type="text" id="ns-name" placeholder="e.g. Adebayo Okonkwo">
+  <label>Full Name</label><input type="text" id="ns-name" placeholder="e.g. Adebayo Okonkwo">
     <label>Parent's WhatsApp</label><input type="tel" id="ns-phone" placeholder="2348012345678">
     <label>Class</label><select id="ns-class" onchange="handleClassSelectChange(this)"></select>
     <label>Termly Fee (₦) — blank uses default</label><input type="number" id="ns-fee" placeholder="Leave blank for default">
@@ -1155,8 +1359,7 @@ function toggleEye(inputId, btn) {
       <button class="btn-brand" style="width:100%;margin-bottom:0.5rem;background:linear-gradient(135deg,#7c3aed,#2563eb);" onclick="document.getElementById('sf-scan-input').click()">📷 Scan Staff ID/CV</button>
       <div id="sf-scan-fb" style="display:none;font-size:0.78rem;color:var(--sub);margin-bottom:0.5rem;text-align:center;"></div>
     </div>
-    <div id="sf-premium-nudge" style="display:none;background:linear-gradient(135deg,#7c3aed,#2563eb);border-radius:10px;padding:0.6rem;text-align:center;font-size:0.76rem;margin-bottom:0.6rem;">⭐ Upgrade to Premium to scan staff ID/CV instead of typing</div>
-    <label>Full Name</label><input type="text" id="sf-name" placeholder="e.g. Mrs. Adunola Bello">
+  <label>Full Name</label><input type="text" id="sf-name" placeholder="e.g. Mrs. Adunola Bello">
     <label>Email (login email)</label><input type="email" id="sf-email" placeholder="teacher@school.edu.ng">
     <label>Password</label>
     <div class="pwd-wrap">
@@ -1182,8 +1385,7 @@ function toggleEye(inputId, btn) {
       <button class="btn-brand" style="width:100%;margin-bottom:0.5rem;background:linear-gradient(135deg,#7c3aed,#2563eb);" onclick="document.getElementById('exp-scan-input').click()">📷 Scan Receipt</button>
       <div id="exp-scan-fb" style="display:none;font-size:0.78rem;color:var(--sub);margin-bottom:0.5rem;text-align:center;"></div>
     </div>
-    <div id="exp-premium-nudge" style="display:none;background:linear-gradient(135deg,#7c3aed,#2563eb);border-radius:10px;padding:0.6rem;text-align:center;font-size:0.76rem;margin-bottom:0.6rem;">⭐ Upgrade to Premium to scan receipts instead of typing</div>
-    <label>Category</label>
+  <label>Category</label>
     <select id="exp-cat"><option>Staff Salaries</option><option>Utilities (NEPA/Generator)</option><option>Building Maintenance</option><option>Teaching Materials</option><option>Government/Ministry Fees</option><option>Cleaning & Security</option><option>Transport</option><option>Examination Fees</option><option>Other</option></select>
     <label>Description</label><input type="text" id="exp-desc" placeholder="e.g. Generator servicing">
     <label>Amount (₦)</label><input type="number" id="exp-amt" placeholder="e.g. 45000">
@@ -1286,41 +1488,14 @@ function toggleEye(inputId, btn) {
   </div>
 </div>
 
-<div class="modal" id="upgrade-modal">
-  <div class="mbox">
-    <div class="mhead">
-      <h3 style="font-size:0.95rem;font-weight:800;">✨ Plan & Upgrade</h3>
-      <button class="mclose" onclick="closeM('upgrade-modal')">×</button>
-    </div>
-    <!-- Current plan card -->
-    <div style="background:linear-gradient(135deg,#eff6ff,#f0fdf4);border-radius:12px;padding:1rem;margin-bottom:0.75rem;">
-      <div style="font-size:0.72rem;color:var(--sub);text-transform:uppercase;letter-spacing:1px;">Current Plan</div>
+
       <div style="font-weight:800;font-size:1.05rem;margin-top:2px;" id="up-plan-name">—</div>
       <div style="font-size:0.78rem;color:var(--sub);margin-top:3px;" id="up-tier-info">—</div>
       <div style="font-size:0.78rem;color:var(--sub);margin-top:2px;" id="up-student-info">—</div>
     </div>
-    <!-- Refresh button -->
-    <button onclick="refreshPlanFromFirestore(this)" style="width:100%;background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:0.65rem;font-size:0.85rem;font-weight:700;color:#2563eb;cursor:pointer;margin-bottom:0.75rem;">🔄 Refresh Plan (after payment)</button>
-    <!-- Tier table -->
-    <div style="font-size:0.75rem;font-weight:700;color:var(--sub);margin-bottom:0.4rem;">PRICING TIERS</div>
-    <div id="up-tier-table" style="font-size:0.78rem;"></div>
-    <!-- Contact agent -->
-    <button onclick="contactAdminForUpgrade();closeM('upgrade-modal');" style="width:100%;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;border:none;border-radius:10px;padding:0.75rem;font-size:0.88rem;font-weight:700;cursor:pointer;margin-top:0.75rem;">📞 Contact Agent to Upgrade</button>
-  </div>
-</div><div class="modal" id="upgrade-modal">
-  <div class="mbox">
-    <div class="mhead"><h3 style="font-size:0.95rem;font-weight:800;">✨ Upgrade to Premium</h3><button class="mclose" onclick="closeM('upgrade-modal')">×</button></div>
-    <div style="background:linear-gradient(135deg,#f0f9ff,#faf5ff);border-radius:12px;padding:1rem;margin-bottom:0.75rem;">
-      <div style="font-weight:800;font-size:1rem;margin-bottom:0.4rem;">Premium Plan — ₦5,000/month</div>
-      <div style="font-size:0.82rem;color:var(--sub);line-height:1.7;">✅ Unlimited staff accounts<br>✅ Finance AI full advisor<br>✅ All Opportunity Scout features<br>✅ Priority support from AariNAT</div>
-    </div>
-    <p style="font-size:0.82rem;color:var(--sub);margin-bottom:0.75rem;">Contact AariNAT via WhatsApp to activate Premium. Your account upgrades within minutes of payment.</p>
-    <button class="btn-wa" onclick="window.open('https://wa.me/2348145073941?text=Hello%20AariNAT%2C%20I%20want%20to%20upgrade%20my%20Educational%20Bloom%20school%20to%20Premium.%20School%20ID%3A%20'+schoolId,'_blank')">💬 WhatsApp AariNAT to Upgrade</button>
-    <button class="btn-ghost" style="margin-top:0.4rem;" onclick="closeM('upgrade-modal')">Maybe Later</button>
-  </div>
-</div>
 
-<script src="app.js?v=20260808-a"></script>
+
+<script src="app.js?v=20260810-scorefix2"></script>
 
 <!-- Class Attendance Modal -->
 <div id="class-att-modal" class="modal">
