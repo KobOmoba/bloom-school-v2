@@ -1,3 +1,22 @@
+## 2026-08-15 — Security: silentPull now skips sensitive keys
+
+**Finding fixed:** Student with DevTools open could write fake scores or fees to the flat parent
+Firestore document (`schools/{id}`). `silentPull()` was then reading that flat doc and overwriting
+in-memory `SD.scores` / `SD.students` / `SD.attendance` — meaning hacked data would display on
+the portal and print on report cards, even though the protected V2 subcollection data was untouched.
+
+**Fix:** `silentPull()` now has a `SUBCOL_KEYS` blocklist. It only pulls `config`-level keys from the
+flat parent doc. All sensitive keys (students, scores, attendance, staff, expenses, health, arts,
+sports, music, alumni, socialPages, commsLog, affective) are now ignored in `silentPull()`.
+V2 subcollections loaded by `hydrateFromV2()` remain the authoritative source for all of these.
+
+**What still needs to happen before porting to School-Bloom production:**
+- Test on sandbox: add a student, record scores, verify silentPull no longer overwrites them
+- Confirm hydrateFromV2 loads correct data after silentPull runs
+
+**Cache-bust:** `?v=20260815-securepull`
+
+---
 ## 2026-08-14 — Security Fixes (Post-Pentest)
 Pentest conducted across all three sandboxes. Three code fixes applied to ALL six repos
 (production + sandbox) simultaneously.
