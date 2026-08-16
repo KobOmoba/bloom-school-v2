@@ -1,0 +1,124 @@
+name: AI Architecture Review
+
+on:
+  push:
+    branches: [main]
+    paths: ['**.js', '**.html', '**.css']
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  architecture-review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Get diff of changed JS/HTML files
+        id: diff
+        run: |
+          git diff HEAD~1 HEAD -- '*.js' '*.html' '*.css' > /tmp/changes.diff
+          BYTES=$(wc -c < /tmp/changes.diff)
+          echo "diff_bytes=$BYTES" >> $GITHUB_OUTPUT
+          echo "Changed: $BYTES bytes"
+
+      - name: Skip if no relevant changes
+        if: steps.diff.outputs.diff_bytes == '0'
+        run: echo "No JS/HTML/CSS changes — skipping review" && exit 0
+
+      - name: Run AI Architecture Review
+        if: steps.diff.outputs.diff_bytes != '0'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          # Truncate diff to 14000 chars to stay within token budget
+          DIFF=$(head -c 14000 /tmp/changes.diff)
+
+          SYSTEM_PROMPT="You are a senior security architect reviewing code for EduBloom — \
+          a Nigerian school management SaaS built with vanilla JS + Firebase Firestore (no frameworks). \
+          The three apps are: school portal (students, fees, scores, attendance), \
+          agent app (deal submissions, commission), portal/command center (Bayo's admin). \
+          Key threat model: students hacking their own scores or fee records; agents inflating \
+          commission; unauthenticated Firestore access; NDPA 2023 (Nigerian data protection) violations. \
+          \n\nFocus ONLY on architecture and security. Do NOT comment on: \
+          syntax, formatting, variable names, indentation, code style, comments, \
+          or anything that does not affect behaviour, security, or maintainability at a system level. \
+          \n\nReview these areas in order of priority: \
+          1. Firestore security rules — correct, complete, no catch-all gaps? \
+          2. Firebase Auth enforcement — are rules actually checking auth, or just client-side gates? \
+          3. Data exposure — sensitive data (fees, scores, staff passwords) readable without auth? \
+          4. Business logic — commission manipulation, tier bypass, score tampering, fee zeroing? \
+          5. Offline sync queue — can it be injected or replayed? \
+          6. RBAC — are role checks enforced server-side (Firestore rules) or only in JS? \
+          7. NDPA 2023 — student personal data protected, consent pathway present? \
+          8. API keys — Groq, HuggingFace, OCR keys properly protected? \
+          \n\nFormat response exactly as: \
+          ## Verdict: APPROVED ✅ or NEEDS WORK ⛔ \
+          ## Architecture Concerns (only if present) \
+          ## Security Issues (label each CRITICAL / HIGH / MEDIUM / LOW) \
+          ## What is safe to merge \
+          \nBe concise. Omit sections that have no issues."
+
+          PAYLOAD=$(python3 -c "
+          import json, sys
+          diff = open('/tmp/changes.diff').read()[:14000]
+          system = '''$SYSTEM_PROMPT'''
+          body = {
+            'model': 'claude-sonnet-4-6',
+            'max_tokens': 1500,
+            'system': system,
+            'messages': [{'role':'user','content': 'Review these code changes for EduBloom:\n\n' + diff}]
+          }
+          print(json.dumps(body))
+          ")
+
+          RESPONSE=$(curl -s https://api.anthropic.com/v1/messages \
+            -H "x-api-key: $ANTHROPIC_API_KEY" \
+            -H "anthropic-version: 2023-06-01" \
+            -H "content-type: application/json" \
+            -d "$PAYLOAD")
+
+          REVIEW=$(echo "$RESPONSE" | python3 -c "
+          import json, sys
+          d = json.load(sys.stdin)
+          if 'content' in d:
+              print(d['content'][0]['text'])
+          else:
+              print('⚠️ Review API call failed: ' + d.get('error',{}).get('message','unknown'))
+          ")
+
+          # Write review to file for next step
+          echo "$REVIEW" > /tmp/review.txt
+          cat /tmp/review.txt
+
+          # Gate: if NEEDS WORK found, set output flag
+          if echo "$REVIEW" | grep -q "NEEDS WORK"; then
+            echo "gate_passed=false" >> $GITHUB_OUTPUT
+          else
+            echo "gate_passed=true" >> $GITHUB_OUTPUT
+          fi
+        id: review
+
+      - name: Post review as commit comment
+        if: steps.diff.outputs.diff_bytes != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          REVIEW=$(cat /tmp/review.txt)
+          BODY="## 🤖 AI Architecture Review\n\n${REVIEW}\n\n---\n*Reviewer: Claude Sonnet · Scope: architecture + security only · Commit: \`${GITHUB_SHA:0:8}\`*"
+
+          curl -s -X POST \
+            -H "Authorization: token $GH_TOKEN" \
+            -H "Content-Type: application/json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/comments" \
+            -d "$(python3 -c "import json; print(json.dumps({'body': open('/tmp/review.txt').read() + '\n\n---\n*Reviewer: Claude Sonnet · architecture + security focus only*'}))")"
+
+      - name: Fail workflow if review found issues
+        if: steps.review.outputs.gate_passed == 'false'
+        run: |
+          echo "⛔ AI reviewer flagged architecture or security issues."
+          echo "Read the commit comment, fix the issues, then re-push."
+          exit 1
