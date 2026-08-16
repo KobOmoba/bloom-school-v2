@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Security — Educational Bloom by AariNAT</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  background:#f8fafc;color:#1e293b;line-height:1.65;font-size:15px}
+.hero{background:linear-gradient(135deg,#1e3a5f,#2563eb);color:#fff;
+  padding:3rem 1.5rem 2.5rem;text-align:center}
+.hero h1{font-size:1.8rem;font-weight:800;margin-bottom:.5rem}
+.hero p{font-size:.95rem;opacity:.85;max-width:540px;margin:0 auto}
+.badge{display:inline-block;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);
+  border-radius:20px;padding:4px 14px;font-size:.78rem;margin-top:.75rem}
+main{max-width:720px;margin:0 auto;padding:1.5rem}
+h2{font-size:1.1rem;font-weight:800;color:#1e3a5f;margin:2rem 0 .75rem;
+  padding-bottom:.4rem;border-bottom:2px solid #e2e8f0}
+h3{font-size:.9rem;font-weight:700;color:#334155;margin:.85rem 0 .3rem}
+p,li{font-size:.88rem;color:#475569}
+ul{padding-left:1.2rem;margin:.3rem 0}
+li{margin:.25rem 0}
+.card{background:#fff;border-radius:12px;padding:1.25rem;margin-bottom:1rem;
+  box-shadow:0 1px 4px rgba(0,0,0,.07);border:1px solid #e2e8f0}
+.chip{display:inline-block;padding:2px 10px;border-radius:10px;font-size:.72rem;
+  font-weight:700;margin-right:4px}
+.chip-g{background:#dcfce7;color:#166534}
+.chip-b{background:#dbeafe;color:#1e40af}
+.chip-y{background:#fef9c3;color:#854d0e}
+.chip-r{background:#fee2e2;color:#991b1b}
+table{width:100%;border-collapse:collapse;font-size:.83rem;margin-top:.5rem}
+th{background:#f1f5f9;padding:.5rem .75rem;text-align:left;font-weight:700;color:#334155;
+  border-bottom:2px solid #e2e8f0}
+td{padding:.45rem .75rem;border-bottom:1px solid #f1f5f9;color:#475569;vertical-align:top}
+.report-box{background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:1rem;margin-top:.75rem}
+.report-box a{color:#92400e;font-weight:700}
+.contact-grid{display:grid;grid-template-columns:1fr 1fr;gap:.75rem}
+.contact-card{background:#f8fafc;border-radius:8px;padding:.75rem;border:1px solid #e2e8f0}
+.contact-card .label{font-size:.7rem;color:#94a3b8;font-weight:700;text-transform:uppercase;margin-bottom:2px}
+.contact-card .value{font-size:.85rem;font-weight:600;color:#1e293b}
+footer{text-align:center;padding:2rem 1rem;font-size:.75rem;color:#94a3b8;
+  border-top:1px solid #e2e8f0;margin-top:2rem}
+@media(max-width:480px){.contact-grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="hero">
+  <h1>🔒 Security at Educational Bloom</h1>
+  <p>How AariNAT protects student data, fee records, and school operations</p>
+  <div class="badge">NDPA 2023 Compliant · Firebase Secured · Nigeria Data Residency Policy</div>
+</div>
+
+<main>
+
+<h2>Our Security Commitment</h2>
+<div class="card">
+  <p>Educational Bloom is built to protect the data of Nigerian students, parents, and schools. 
+  We apply security controls across every layer of the platform — from how passwords are stored 
+  to how Firestore database rules are written and tested. This page describes what we do, 
+  how we do it, and how to report a concern.</p>
+</div>
+
+<h2>Authentication & Access</h2>
+<div class="card">
+  <h3>Password Storage</h3>
+  <p>All passwords are hashed using <strong>SHA-256 via the Web Crypto API</strong> before being written 
+  to Firestore. Plaintext passwords never leave the user's device. Legacy plaintext passwords 
+  are automatically migrated on first login.</p>
+
+  <h3>Role-Based Access Control (RBAC)</h3>
+  <p>Four roles exist within every school account. Access is enforced at two layers:</p>
+  <ul>
+    <li><span class="chip chip-g">Principal</span> — full access to all school data</li>
+    <li><span class="chip chip-b">Bursar</span> — fee data only, no scores or staff records</li>
+    <li><span class="chip chip-b">Class Teacher</span> — assigned class only, no fee visibility</li>
+    <li><span class="chip chip-b">Subject Teacher</span> — assigned subjects only</li>
+  </ul>
+  <p style="margin-top:.5rem">Client-side gates (JavaScript) prevent navigation. 
+  Server-side Firestore rules enforce the same restrictions on all database reads and writes — 
+  bypassing the app via browser console or API does not grant access.</p>
+
+  <h3>Session Management</h3>
+  <p>School sessions persist in localStorage with school ID binding. 
+  Portal admin sessions expire after 8 hours. Agent sessions persist until manual logout.</p>
+</div>
+
+<h2>Data Protection</h2>
+<div class="card">
+  <h3>What data we store</h3>
+  <table>
+    <tr><th>Data Type</th><th>Who Can Access</th><th>Encrypted</th></tr>
+    <tr><td>Student names, phone, class</td><td>School staff only</td><td>In transit (TLS) + at rest (Firebase AES-256)</td></tr>
+    <tr><td>Fee records & payment history</td><td>Principal + Bursar only</td><td>Same</td></tr>
+    <tr><td>Academic scores</td><td>Principal + assigned teacher</td><td>Same</td></tr>
+    <tr><td>Attendance records</td><td>Principal + class teacher</td><td>Same</td></tr>
+    <tr><td>Staff credentials</td><td>Principal (hashed passwords)</td><td>SHA-256 hashed</td></tr>
+    <tr><td>Agent deal submissions</td><td>AariNAT admin only</td><td>Same</td></tr>
+  </table>
+
+  <h3>Data residency</h3>
+  <p>Data is stored on <strong>Google Firebase Firestore</strong>. AariNAT has configured 
+  the Firebase project in alignment with Google's data processing terms. 
+  For NDPA 2023 compliance documentation, contact 
+  <a href="mailto:aarinat.company.limited@gmail.com">aarinat.company.limited@gmail.com</a>.</p>
+
+  <h3>Third-party processors</h3>
+  <table>
+    <tr><th>Processor</th><th>Purpose</th><th>Data sent</th></tr>
+    <tr><td>Google Firebase</td><td>Database, Auth, Hosting</td><td>All school records</td></tr>
+    <tr><td>Groq</td><td>Score sheet OCR</td><td>Register photos (optional feature)</td></tr>
+    <tr><td>HuggingFace</td><td>OCR fallback</td><td>Register photos (optional feature)</td></tr>
+    <tr><td>OCR.space</td><td>OCR fallback 2</td><td>Register photos (optional feature)</td></tr>
+    <tr><td>GitHub Pages</td><td>App hosting</td><td>No personal data</td></tr>
+  </table>
+  <p style="margin-top:.5rem">The OCR features that send photos externally are 
+  <span class="chip chip-y">PREMIUM</span> features — only active when the school enables 
+  score sheet scanning. Raw student names in register photos may be processed by Groq/HuggingFace.</p>
+</div>
+
+<h2>Infrastructure Security</h2>
+<div class="card">
+  <table>
+    <tr><th>Control</th><th>Status</th></tr>
+    <tr><td>HTTPS / TLS everywhere</td><td><span class="chip chip-g">✅ Enforced</span></td></tr>
+    <tr><td>Firestore security rules</td><td><span class="chip chip-g">✅ Active + tested</span></td></tr>
+    <tr><td>Firestore catch-all default</td><td><span class="chip chip-g">✅ DENY (if false)</span></td></tr>
+    <tr><td>Password hashing (SHA-256)</td><td><span class="chip chip-g">✅ Active</span></td></tr>
+    <tr><td>XSS output encoding</td><td><span class="chip chip-g">✅ Active (esc() + apostrophe fix)</span></td></tr>
+    <tr><td>Commission rate server validation</td><td><span class="chip chip-g">✅ Active</span></td></tr>
+    <tr><td>Automated pentest on every push</td><td><span class="chip chip-g">✅ GitHub Actions</span></td></tr>
+    <tr><td>AI architecture review on every push</td><td><span class="chip chip-g">✅ Claude Sonnet</span></td></tr>
+    <tr><td>Firebase Auth for admin operations</td><td><span class="chip chip-g">✅ Portal requires auth</span></td></tr>
+    <tr><td>Per-school Firebase Auth (RBAC enforcement)</td><td><span class="chip chip-y">🔜 In progress</span></td></tr>
+    <tr><td>DDoS protection</td><td><span class="chip chip-b">GitHub Pages CDN</span></td></tr>
+    <tr><td>Multi-factor authentication</td><td><span class="chip chip-r">⏳ Planned</span></td></tr>
+  </table>
+</div>
+
+<h2>NDPA 2023 Compliance</h2>
+<div class="card">
+  <p>Educational Bloom operates under the <strong>Nigeria Data Protection Act 2023 (NDPA)</strong> 
+  and is regulated by the <strong>Nigeria Data Protection Commission (NDPC)</strong>.</p>
+  <ul style="margin-top:.5rem">
+    <li><strong>Data Controller:</strong> AariNAT Company Limited (RC-1732521), Abeokuta, Ogun State</li>
+    <li><strong>Lawful basis for processing:</strong> Contract (school subscription) + Legitimate interest</li>
+    <li><strong>Retention:</strong> 24 months after subscription ends, then deletion on request</li>
+    <li><strong>Data Subject Rights:</strong> Schools may request export or deletion — contact us below</li>
+    <li><strong>Breach notification:</strong> NDPC notification within 72 hours of discovery</li>
+    <li><strong>Cross-border transfers:</strong> Firebase EU/US servers — documented under Google's DPA</li>
+  </ul>
+</div>
+
+<h2>Reporting a Vulnerability</h2>
+<div class="card">
+  <div class="report-box">
+    <p>If you have discovered a security vulnerability in Educational Bloom, please report it 
+    responsibly. <strong>Do not publish or exploit it.</strong></p>
+    <p style="margin-top:.5rem">
+      📧 <a href="mailto:aarinat.company.limited@gmail.com">aarinat.company.limited@gmail.com</a><br>
+      📱 WhatsApp: <a href="https://wa.me/2348145073941">+234 814 507 3941</a>
+    </p>
+    <p style="margin-top:.5rem;font-size:.8rem">We aim to acknowledge reports within <strong>48 hours</strong> 
+    and resolve critical issues within <strong>7 days</strong>. 
+    Responsible reporters will be credited in our security changelog.</p>
+  </div>
+
+  <h3 style="margin-top:1rem">Scope</h3>
+  <ul>
+    <li><span class="chip chip-g">In scope</span> school.edubloom.com.ng, agent.edubloom.com.ng, portal.edubloom.com.ng, Firestore rules</li>
+    <li><span class="chip chip-r">Out of scope</span> Brute-force attacks, social engineering, physical access</li>
+  </ul>
+</div>
+
+<h2>Contact</h2>
+<div class="contact-grid">
+  <div class="contact-card">
+    <div class="label">Security</div>
+    <div class="value">aarinat.company.limited@gmail.com</div>
+  </div>
+  <div class="contact-card">
+    <div class="label">WhatsApp</div>
+    <div class="value">+234 814 507 3941</div>
+  </div>
+  <div class="contact-card">
+    <div class="label">Company</div>
+    <div class="value">AariNAT Company Limited RC-1732521</div>
+  </div>
+  <div class="contact-card">
+    <div class="label">Regulator</div>
+    <div class="value">NDPC — ndpc.gov.ng</div>
+  </div>
+</div>
+
+</main>
+<footer>
+  Educational Bloom by AariNAT · Security Policy · Last updated 2026-08-15 · 
+  <a href="https://ndpc.gov.ng" style="color:#2563eb">NDPC Regulator</a>
+</footer>
+</body>
+</html>
